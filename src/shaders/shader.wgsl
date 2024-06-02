@@ -6,13 +6,13 @@ var<uniform> vertex_uniform: Uniform;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
 };
 struct InstanceInput {
     @location(2) transform_0: vec4<f32>,
     @location(3) transform_1: vec4<f32>,
     @location(4) transform_2: vec4<f32>,
     @location(5) transform_3: vec4<f32>,
+    @location(6) color: vec3<f32>,
 };
 
 struct VertexOutput {
@@ -32,7 +32,7 @@ fn vs_main(
         instance.transform_2,
         instance.transform_3,
     );
-    out.color = model.color;
+    out.color = instance.color;
     out.clip_position = vertex_uniform.transform * instance_transform * 
         vec4<f32>(model.position, 1.0);
     return out;

@@ -10,38 +10,22 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+mod game;
+use game::render::StoneInstance;
+use game::{GameState, MAX_STONES};
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
-    color: [f32; 3],
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Instance {
-    transform: [[f32; 4]; 4],
-}
-
-impl Instance {
-    const ATTRIBS: [wgpu::VertexAttribute; 4] =
-        wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4];
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
             attributes: &Self::ATTRIBS,
         }
     }
@@ -64,35 +48,27 @@ impl Uniform {
 const TEST_STONE_VERTS: &[Vertex] = &[
     Vertex {
         position: [-0.0212132, 0.0212132, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [-0.03, 0.0, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [-0.0212132, -0.0212132, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [0.0, -0.03, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [0.0212132, -0.0212132, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [0.03, 0.0, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [0.0212132, 0.0212132, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
     Vertex {
         position: [0.0, 0.03, 0.0],
-        color: [0.0, 0.0, 0.0],
     },
 ];
 
@@ -155,14 +131,15 @@ struct State<'a> {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
+    stone_instances: Vec<StoneInstance>,
+    stone_instance_buffer: wgpu::Buffer,
     uniform: Uniform,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     window: &'a Window,
     input_state: InputState,
     camera: Matrix4<f32>,
+    game_state: GameState,
 }
 
 impl<'a> State<'a> {
@@ -262,7 +239,7 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), Instance::desc()],
+                buffers: &[Vertex::desc(), StoneInstance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -304,25 +281,18 @@ impl<'a> State<'a> {
             contents: bytemuck::cast_slice(TEST_STONE_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let instances = vec![
-            Instance {
-                transform: Matrix4::identity().into(),
-            },
-            Instance {
-                transform: Matrix4::from_translation(Vector3::new(0.3, 0.0, 0.0)).into(),
-            },
-            Instance {
-                transform: Matrix4::from_translation(Vector3::new(-0.3, 0.0, 0.0)).into(),
-            },
-        ];
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let stone_instances = Vec::new();
+        let stone_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
-            contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
+            size: game::MAX_STONES * mem::size_of::<StoneInstance>() as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let input_state = InputState::default();
         let camera = Matrix4::identity();
+
+        let game_state = GameState::new();
 
         Self {
             surface,
@@ -333,14 +303,15 @@ impl<'a> State<'a> {
             render_pipeline,
             vertex_buffer,
             index_buffer,
-            instances,
-            instance_buffer,
+            stone_instances,
+            stone_instance_buffer,
             uniform,
             uniform_buffer,
             uniform_bind_group,
             window,
             input_state,
             camera,
+            game_state,
         }
     }
 
@@ -378,6 +349,14 @@ impl<'a> State<'a> {
             &self.uniform_buffer,
             0,
             bytemuck::cast_slice(&[self.uniform]),
+        );
+
+        // TODO allocs every pass
+        self.stone_instances = self.game_state.make_stone_instances();
+        self.queue.write_buffer(
+            &self.stone_instance_buffer,
+            0,
+            bytemuck::cast_slice(&self.stone_instances[..]),
         );
     }
 
@@ -417,12 +396,12 @@ impl<'a> State<'a> {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.stone_instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(
                 0..TEST_STONE_INDICES.len() as _,
                 0,
-                0..self.instances.len() as _,
+                0..self.stone_instances.len() as _,
             );
         }
 
