@@ -1,7 +1,7 @@
 use std::{iter, mem};
 
-use cgmath::{Matrix4, SquareMatrix, Vector3};
-use wgpu::util::DeviceExt;
+use cgmath::{Matrix4, SquareMatrix, Vector2, Vector4};
+use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     dpi::LogicalSize,
     event::*,
@@ -11,7 +11,7 @@ use winit::{
 };
 
 mod game;
-use game::render::StoneInstance;
+use game::{render::StoneInstance, STONE_RADIUS};
 use game::{GameState, MAX_STONES};
 
 #[repr(C)]
@@ -45,30 +45,31 @@ impl Uniform {
     }
 }
 
+const SQRT2: f32 = 1.4142135623730951;
 const TEST_STONE_VERTS: &[Vertex] = &[
     Vertex {
-        position: [-0.0212132, 0.0212132, 0.0],
+        position: [-STONE_RADIUS / SQRT2, STONE_RADIUS / SQRT2, 0.0],
     },
     Vertex {
-        position: [-0.03, 0.0, 0.0],
+        position: [-STONE_RADIUS, 0.0, 0.0],
     },
     Vertex {
-        position: [-0.0212132, -0.0212132, 0.0],
+        position: [-STONE_RADIUS / SQRT2, -STONE_RADIUS / SQRT2, 0.0],
     },
     Vertex {
-        position: [0.0, -0.03, 0.0],
+        position: [0.0, -STONE_RADIUS, 0.0],
     },
     Vertex {
-        position: [0.0212132, -0.0212132, 0.0],
+        position: [STONE_RADIUS / SQRT2, -STONE_RADIUS / SQRT2, 0.0],
     },
     Vertex {
-        position: [0.03, 0.0, 0.0],
+        position: [STONE_RADIUS, 0.0, 0.0],
     },
     Vertex {
-        position: [0.0212132, 0.0212132, 0.0],
+        position: [STONE_RADIUS / SQRT2, STONE_RADIUS / SQRT2, 0.0],
     },
     Vertex {
-        position: [0.0, 0.03, 0.0],
+        position: [0.0, STONE_RADIUS, 0.0],
     },
 ];
 
@@ -76,7 +77,35 @@ const TEST_STONE_INDICES: &[u16] = &[
     0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7, /* padding */ 0,
 ];
 
-#[derive(Default)]
+struct ViewState {
+    camera: Matrix4<f32>,
+}
+
+impl ViewState {
+    fn new() -> Self {
+        const SCALE: f32 = 0.1;
+        let mut camera = Matrix4::identity();
+        camera.w.w = 1.0 / SCALE;
+
+        Self { camera }
+    }
+
+    fn pixel_to_world_coords(
+        &self,
+        config: &SurfaceConfiguration,
+        pos: &winit::dpi::PhysicalPosition<f64>,
+    ) -> Vector2<f32> {
+        let v = self.camera.invert().unwrap()
+            * (Vector4::new(
+                2.0 * pos.x as f32 / config.width as f32,
+                -2.0 * pos.y as f32 / config.height as f32,
+                0.0,
+                1.0,
+            ) + Vector4::new(-1.0, 1.0, 0.0, 0.0));
+        Vector2::new(v.x, v.y) / v.w
+    }
+}
+
 struct InputState {
     forward: bool,
     left: bool,
@@ -85,6 +114,15 @@ struct InputState {
 }
 
 impl InputState {
+    fn new() -> Self {
+        InputState {
+            forward: false,
+            left: false,
+            right: false,
+            back: false,
+        }
+    }
+
     fn process(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
@@ -138,7 +176,8 @@ struct State<'a> {
     uniform_bind_group: wgpu::BindGroup,
     window: &'a Window,
     input_state: InputState,
-    camera: Matrix4<f32>,
+    cursor_pos: Vector2<f32>,
+    view_state: ViewState,
     game_state: GameState,
 }
 
@@ -284,14 +323,13 @@ impl<'a> State<'a> {
         let stone_instances = Vec::new();
         let stone_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
-            size: game::MAX_STONES * mem::size_of::<StoneInstance>() as u64,
+            size: MAX_STONES * mem::size_of::<StoneInstance>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let input_state = InputState::default();
-        let camera = Matrix4::identity();
-
+        let input_state = InputState::new();
+        let view_state = ViewState::new();
         let game_state = GameState::new();
 
         Self {
@@ -310,7 +348,8 @@ impl<'a> State<'a> {
             uniform_bind_group,
             window,
             input_state,
-            camera,
+            cursor_pos: Vector2::new(-1.0, -1.0),
+            view_state,
             game_state,
         }
     }
@@ -329,22 +368,47 @@ impl<'a> State<'a> {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        self.input_state.process(event)
+        if self.input_state.process(event) {
+            return true;
+        }
+        match event {
+            // TODO doesn't quite work when camera moves without cursor moving
+            // can i just fetch cursor position and/or force update?
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = self
+                    .view_state
+                    .pixel_to_world_coords(&self.config, position);
+                true
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                state,
+                ..
+            } => {
+                match *state {
+                    ElementState::Pressed => self.game_state.select_point_test(self.cursor_pos),
+                    ElementState::Released => (),
+                }
+                println!("mouse event at {0:?}", self.cursor_pos);
+                true
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self) {
-        const DELTA: f32 = 0.001;
+        const DELTA: f32 = 0.01;
         if self.input_state.back {
-            self.camera.w.y += DELTA;
+            self.view_state.camera.w.y += DELTA;
         } else if self.input_state.forward {
-            self.camera.w.y -= DELTA;
+            self.view_state.camera.w.y -= DELTA;
         }
         if self.input_state.left {
-            self.camera.w.x += DELTA;
+            self.view_state.camera.w.x += DELTA;
         } else if self.input_state.right {
-            self.camera.w.x -= DELTA;
+            self.view_state.camera.w.x -= DELTA;
         }
-        self.uniform.transform = self.camera.into();
+        self.uniform.transform = self.view_state.camera.into();
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -448,6 +512,7 @@ pub async fn run() {
                         WindowEvent::Resized(physical_size) => {
                             surface_configured = true;
                             state.resize(*physical_size);
+                            println!("resize event {:?}", *physical_size);
                         }
                         WindowEvent::RedrawRequested => {
                             state.window().request_redraw();

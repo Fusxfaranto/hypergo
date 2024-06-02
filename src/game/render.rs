@@ -23,15 +23,13 @@ impl StoneInstance {
 }
 
 impl GameState {
+    // incremental updates would be nice, eventually
     pub fn make_stone_instances(&self) -> Vec<StoneInstance> {
-        const SCALE: f32 = 0.1;
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
             instances.push(StoneInstance {
-                transform: Matrix4::from_translation(
-                    -SCALE * Vector3::new(point.pos.x, point.pos.y, 0.0),
-                )
-                .into(),
+                transform: Matrix4::from_translation(Vector3::new(point.pos.x, point.pos.y, 0.0))
+                    .into(),
                 color: match point.ty {
                     StoneType::Empty => [0.0, 0.8, 0.0],
                     StoneType::Black => [0.0, 0.0, 0.0],
@@ -39,6 +37,7 @@ impl GameState {
                 },
             })
         }
+        instances.last_mut().unwrap().color = [0.8, 0.0, 0.8];
         instances
     }
 }
