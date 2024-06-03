@@ -463,13 +463,15 @@ impl<'a> State<'a> {
             bytemuck::cast_slice(&[self.uniform]),
         );
 
-        // TODO allocs every pass
-        self.stone_instances = self.game_state.make_stone_instances();
-        self.queue.write_buffer(
-            &self.stone_instance_buffer,
-            0,
-            bytemuck::cast_slice(&self.stone_instances[..]),
-        );
+        if self.game_state.needs_render {
+            self.stone_instances = self.game_state.make_stone_instances();
+            self.queue.write_buffer(
+                &self.stone_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.stone_instances[..]),
+            );
+            self.game_state.needs_render = false;
+        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

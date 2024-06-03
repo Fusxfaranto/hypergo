@@ -82,41 +82,43 @@ enum Turn {
 pub struct GameState {
     board: Board,
     turn: Turn,
+    pub needs_render: bool,
 }
 
 impl GameState {
     pub fn new() -> Self {
-        let board = Board::make_square(4, 3);
+        let board = Board::make_square(9, 9);
         Self {
             board,
             turn: Turn::Black,
+            needs_render: true,
         }
     }
 
-    pub fn update_captures(&mut self, point_idx: i32) {
-        let (played_type, capturing_type) = match self.turn {
-            Turn::Black => (StoneType::Black, StoneType::White),
-            Turn::White => (StoneType::White, StoneType::Black),
+    fn update_captures(&mut self, point_idx: i32) -> bool {
+        let captured_type = match self.turn {
+            Turn::Black => StoneType::White,
+            Turn::White => StoneType::Black,
         };
         let mut captured_idxs = vec![];
 
         let start_point = &self.board.points[point_idx as usize];
         'outer: for start_idx in start_point.neighbors.iter() {
             // redundant but skips allocs if no potential to capture
-            if self.board.points[*start_idx as usize].ty != capturing_type {
+            if self.board.points[*start_idx as usize].ty != captured_type {
                 continue;
             }
-            let mut search_stack = vec![start_idx];
+            let mut search_stack = vec![*start_idx];
             let mut checked_idxs = vec![];
 
             while let Some(i) = search_stack.pop() {
-                let point = &self.board.points[*i as usize];
+                let point = &self.board.points[i as usize];
                 match point.ty {
                     StoneType::Empty => continue 'outer,
                     _ => {
-                        if point.ty == capturing_type && checked_idxs.iter().all(|&x| x != *i) {
+                        if point.ty == captured_type && checked_idxs.iter().all(|&x| x != i) {
                             search_stack.extend(point.neighbors.iter());
-                            checked_idxs.push(*i);
+                            checked_idxs.push(i);
                         }
                     }
                 }
@@ -130,6 +132,31 @@ impl GameState {
             self.board.points[*i as usize].ty = StoneType::Empty;
             // TODO scoring?
         }
+
+        !captured_idxs.is_empty()
+    }
+
+    fn is_self_capture(&self, point_idx: i32) -> bool {
+        let captured_type = match self.turn {
+            Turn::Black => StoneType::Black,
+            Turn::White => StoneType::White,
+        };
+        let mut search_stack = vec![point_idx];
+        let mut checked_idxs = vec![];
+
+        while let Some(i) = search_stack.pop() {
+            let point = &self.board.points[i as usize];
+            match point.ty {
+                StoneType::Empty => return false,
+                _ => {
+                    if point.ty == captured_type && checked_idxs.iter().all(|&x| x != i) {
+                        search_stack.extend(point.neighbors.iter());
+                        checked_idxs.push(i);
+                    }
+                }
+            }
+        }
+        true
     }
 
     fn try_select_point(&mut self, pos: Vector2<f32>) -> bool {
@@ -146,7 +173,14 @@ impl GameState {
                         Turn::Black => point.ty = StoneType::Black,
                         Turn::White => point.ty = StoneType::White,
                     };
-                    self.update_captures(i);
+                    if !self.update_captures(i) {
+                        if self.is_self_capture(i) {
+                            println!("self capture");
+                            let point = &mut self.board.points[i as usize];
+                            point.ty = StoneType::Empty;
+                            return false;
+                        }
+                    }
                     true
                 }
                 _ => false,
@@ -162,7 +196,8 @@ impl GameState {
             self.turn = match self.turn {
                 Turn::Black => Turn::White,
                 Turn::White => Turn::Black,
-            }
+            };
+            self.needs_render = true;
         }
     }
 }
