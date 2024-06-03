@@ -11,7 +11,7 @@ use winit::{
 };
 
 mod game;
-use game::{render::StoneInstance, STONE_RADIUS};
+use game::{render::Instance, STONE_RADIUS};
 use game::{GameState, MAX_STONES};
 
 #[repr(C)]
@@ -46,7 +46,7 @@ impl Uniform {
 }
 
 const SQRT2: f32 = 1.4142135623730951;
-const TEST_STONE_VERTS: &[Vertex] = &[
+const STONE_VERTS: &[Vertex] = &[
     Vertex {
         position: [-STONE_RADIUS / SQRT2, STONE_RADIUS / SQRT2, 0.0],
     },
@@ -73,9 +73,25 @@ const TEST_STONE_VERTS: &[Vertex] = &[
     },
 ];
 
-const TEST_STONE_INDICES: &[u16] = &[
-    0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7, /* padding */ 0,
+const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7];
+
+const LINK_WIDTH: f32 = 0.06;
+const LINK_VERTS: &[Vertex] = &[
+    Vertex {
+        position: [-LINK_WIDTH / 2.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [LINK_WIDTH / 2.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-LINK_WIDTH / 2.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [LINK_WIDTH / 2.0, 1.0, 0.0],
+    },
 ];
+
+const LINK_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
 
 struct ViewState {
     camera: Matrix4<f32>,
@@ -167,14 +183,23 @@ struct State<'a> {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    stone_instances: Vec<StoneInstance>,
+
+    stone_vertex_buffer: wgpu::Buffer,
+    stone_index_buffer: wgpu::Buffer,
+    stone_instances: Vec<Instance>,
     stone_instance_buffer: wgpu::Buffer,
+
+    link_vertex_buffer: wgpu::Buffer,
+    link_index_buffer: wgpu::Buffer,
+    link_instances: Vec<Instance>,
+    link_instance_buffer: wgpu::Buffer,
+
     uniform: Uniform,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
+
     window: &'a Window,
+
     input_state: InputState,
     cursor_pos: Vector2<f32>,
     view_state: ViewState,
@@ -183,6 +208,10 @@ struct State<'a> {
 
 impl<'a> State<'a> {
     async fn new(window: &'a Window) -> State<'a> {
+        let input_state = InputState::new();
+        let view_state = ViewState::new();
+        let game_state = GameState::new();
+
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -225,7 +254,8 @@ impl<'a> State<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            //present_mode: surface_caps.present_modes[0],
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -278,7 +308,7 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), StoneInstance::desc()],
+                buffers: &[Vertex::desc(), Instance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -310,27 +340,41 @@ impl<'a> State<'a> {
             multiview: None,
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("vertex_buffer"),
-            contents: bytemuck::cast_slice(TEST_STONE_VERTS),
+        let stone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("stone_vertex_buffer"),
+            contents: bytemuck::cast_slice(STONE_VERTS),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("index_buffer"),
-            contents: bytemuck::cast_slice(TEST_STONE_INDICES),
+        let stone_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("stone_index_buffer"),
+            contents: bytemuck::cast_slice(STONE_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
         let stone_instances = Vec::new();
         let stone_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("instance_buffer"),
-            size: MAX_STONES * mem::size_of::<StoneInstance>() as u64,
+            label: Some("stone_instance_buffer"),
+            // TODO get size from game state?
+            size: MAX_STONES * mem::size_of::<Instance>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let input_state = InputState::new();
-        let view_state = ViewState::new();
-        let game_state = GameState::new();
+        let link_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("link_vertex_buffer"),
+            contents: bytemuck::cast_slice(LINK_VERTS),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let link_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("link_index_buffer"),
+            contents: bytemuck::cast_slice(LINK_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let link_instances = game_state.make_link_instances();
+        let link_instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("link_instance_buffer"),
+            contents: bytemuck::cast_slice(&link_instances),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
         Self {
             surface,
@@ -339,10 +383,14 @@ impl<'a> State<'a> {
             config,
             size,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
+            stone_vertex_buffer,
+            stone_index_buffer,
             stone_instances,
             stone_instance_buffer,
+            link_vertex_buffer,
+            link_index_buffer,
+            link_instances,
+            link_instance_buffer,
             uniform,
             uniform_buffer,
             uniform_bind_group,
@@ -386,10 +434,10 @@ impl<'a> State<'a> {
                 ..
             } => {
                 match *state {
-                    ElementState::Pressed => self.game_state.select_point_test(self.cursor_pos),
+                    ElementState::Pressed => self.game_state.select_point(self.cursor_pos),
                     ElementState::Released => (),
                 }
-                println!("mouse event at {0:?}", self.cursor_pos);
+                //println!("mouse event at {0:?}", self.cursor_pos);
                 true
             }
             _ => false,
@@ -459,11 +507,22 @@ impl<'a> State<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.stone_instance_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, self.link_vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.link_instance_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.link_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(
-                0..TEST_STONE_INDICES.len() as _,
+                0..LINK_INDICES.len() as _,
+                0,
+                0..self.link_instances.len() as _,
+            );
+
+            render_pass.set_vertex_buffer(0, self.stone_vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.stone_instance_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.stone_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(
+                0..STONE_INDICES.len() as _,
                 0,
                 0..self.stone_instances.len() as _,
             );
