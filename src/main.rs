@@ -1,9 +1,9 @@
 use std::{iter, mem};
 
-use cgmath::{Matrix4, SquareMatrix, Vector2, Vector4};
+use cgmath::{abs_diff_eq, abs_diff_ne, Matrix4, SquareMatrix, Vector2, Vector4, Zero};
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
-    dpi::LogicalSize,
+    dpi::{LogicalSize, PhysicalPosition},
     event::*,
     event_loop::EventLoop,
     keyboard::{KeyCode, PhysicalKey},
@@ -78,47 +78,69 @@ const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 
 const LINK_WIDTH: f32 = 0.06;
 const LINK_VERTS: &[Vertex] = &[
     Vertex {
-        position: [-LINK_WIDTH / 2.0, 0.0, 0.0],
+        position: [-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
     },
     Vertex {
-        position: [LINK_WIDTH / 2.0, 0.0, 0.0],
+        position: [LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
     },
     Vertex {
-        position: [-LINK_WIDTH / 2.0, 1.0, 0.0],
+        position: [-LINK_WIDTH / 2.0, 1.0 + LINK_WIDTH / 2.0, 0.0],
     },
     Vertex {
-        position: [LINK_WIDTH / 2.0, 1.0, 0.0],
+        position: [LINK_WIDTH / 2.0, 1.0 + LINK_WIDTH / 2.0, 0.0],
     },
 ];
 
 const LINK_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
 
 struct ViewState {
+    scale: f32,
     camera: Matrix4<f32>,
 }
 
 impl ViewState {
     fn new() -> Self {
-        const SCALE: f32 = 0.1;
+        let scale = 0.1;
         let mut camera = Matrix4::identity();
-        camera.w.w = 1.0 / SCALE;
+        camera.w.w = 1.0 / scale;
 
-        Self { camera }
+        Self { scale, camera }
     }
 
-    fn pixel_to_world_coords(
-        &self,
-        config: &SurfaceConfiguration,
-        pos: &winit::dpi::PhysicalPosition<f64>,
-    ) -> Vector2<f32> {
+    fn pixel_to_world_coords(&self, config: &SurfaceConfiguration, x: f64, y: f64) -> Vector2<f32> {
         let v = self.camera.invert().unwrap()
             * (Vector4::new(
-                2.0 * pos.x as f32 / config.width as f32,
-                -2.0 * pos.y as f32 / config.height as f32,
+                2.0 * x as f32 / config.width as f32,
+                -2.0 * y as f32 / config.height as f32,
                 0.0,
                 1.0,
             ) + Vector4::new(-1.0, 1.0, 0.0, 0.0));
         Vector2::new(v.x, v.y) / v.w
+    }
+
+    // TODO ???????
+    fn pixel_delta_to_world(&self, config: &SurfaceConfiguration, x: f64, y: f64) -> Vector2<f32> {
+        let mut translationless_camera_inverse = Matrix4::identity();
+        translationless_camera_inverse.w.w = self.scale;
+        let v = translationless_camera_inverse
+            * Vector4::new(
+                1.0 * x as f32 / config.width as f32,
+                -1.0 * y as f32 / config.height as f32,
+                0.0,
+                1.0,
+            );
+        Vector2::new(v.x, v.y) / v.w * 2.1
+    }
+
+    fn adjust_scale(&mut self, amt: f32) {
+        self.scale *= amt + 1.0;
+        self.camera.w.w = 1.0 / self.scale;
+    }
+
+    fn translate(&mut self, delta: Vector2<f32>) {
+        println!("translate {:?}", delta);
+        self.camera.w.x += delta.x;
+        self.camera.w.y += delta.y;
     }
 }
 
@@ -204,6 +226,7 @@ struct State<'a> {
     cursor_pos: Vector2<f32>,
     view_state: ViewState,
     game_state: GameState,
+    is_dragging: bool,
 }
 
 impl<'a> State<'a> {
@@ -396,9 +419,10 @@ impl<'a> State<'a> {
             uniform_bind_group,
             window,
             input_state,
-            cursor_pos: Vector2::new(-1.0, -1.0),
+            cursor_pos: Vector2::new(f32::NAN, f32::NAN),
             view_state,
             game_state,
+            is_dragging: false,
         }
     }
 
@@ -415,17 +439,38 @@ impl<'a> State<'a> {
         }
     }
 
+    fn handle_mouse(&mut self, x: f64, y: f64) {
+        //println!("handle_mouse {x} {y}");
+        if self.is_dragging {
+            self.view_state
+                .translate(self.view_state.pixel_delta_to_world(&self.config, x, y));
+        }
+    }
+
     fn input(&mut self, event: &WindowEvent) -> bool {
         if self.input_state.process(event) {
             return true;
         }
         match event {
+            WindowEvent::MouseWheel { delta, .. } => {
+                let scroll_amt = match delta {
+                    MouseScrollDelta::LineDelta(_, rows) => rows * 100.0,
+                    MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => {
+                        *scroll as f32
+                    }
+                };
+                const SCROLL_FACTOR: f32 = 0.001;
+                self.view_state.adjust_scale(scroll_amt * SCROLL_FACTOR);
+                true
+            }
             // TODO doesn't quite work when camera moves without cursor moving
             // can i just fetch cursor position and/or force update?
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_pos = self
-                    .view_state
-                    .pixel_to_world_coords(&self.config, position);
+                if !self.is_dragging {
+                    self.cursor_pos =
+                        self.view_state
+                            .pixel_to_world_coords(&self.config, position.x, position.y);
+                }
                 true
             }
             WindowEvent::MouseInput {
@@ -437,7 +482,17 @@ impl<'a> State<'a> {
                     ElementState::Pressed => self.game_state.select_point(self.cursor_pos),
                     ElementState::Released => (),
                 }
-                //println!("mouse event at {0:?}", self.cursor_pos);
+                true
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Right,
+                state,
+                ..
+            } => {
+                match *state {
+                    ElementState::Pressed => self.is_dragging = true,
+                    ElementState::Released => self.is_dragging = false,
+                }
                 true
             }
             _ => false,
@@ -445,16 +500,20 @@ impl<'a> State<'a> {
     }
 
     fn update(&mut self) {
-        const DELTA: f32 = 0.01;
+        const SPEED: f32 = 0.1;
+        let mut delta = Vector2::zero();
         if self.input_state.back {
-            self.view_state.camera.w.y += DELTA;
+            delta.y += SPEED;
         } else if self.input_state.forward {
-            self.view_state.camera.w.y -= DELTA;
+            delta.y -= SPEED;
         }
         if self.input_state.left {
-            self.view_state.camera.w.x += DELTA;
+            delta.x += SPEED;
         } else if self.input_state.right {
-            self.view_state.camera.w.x -= DELTA;
+            delta.x -= SPEED;
+        }
+        if abs_diff_ne!(delta, Vector2::zero()) {
+            self.view_state.translate(delta);
         }
         self.uniform.transform = self.view_state.camera.into();
         self.queue.write_buffer(
@@ -494,9 +553,9 @@ impl<'a> State<'a> {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
+                            r: 0.55,
+                            g: 0.4,
+                            b: 0.25,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -554,6 +613,10 @@ pub async fn run() {
 
     event_loop
         .run(move |event, control_flow| match event {
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta: (x, y) },
+                ..
+            } => state.handle_mouse(x, y),
             Event::WindowEvent {
                 ref event,
                 window_id,

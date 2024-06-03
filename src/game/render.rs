@@ -51,6 +51,9 @@ impl GameState {
     pub fn make_stone_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
+            if point.ty == StoneType::Empty {
+                continue;
+            }
             instances.push(Instance {
                 transform: Matrix4::from_translation(Vector3::new(point.pos.x, point.pos.y, 0.0))
                     .into(),
