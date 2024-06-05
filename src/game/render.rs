@@ -1,6 +1,6 @@
 use std::mem;
 
-use cgmath::{Matrix4, SquareMatrix, Vector3};
+use cgmath::{vec2, vec3, Matrix4, SquareMatrix, Vector3};
 
 use super::*;
 
@@ -22,12 +22,16 @@ impl Instance {
     }
 }
 
-impl GameState {
+fn reduce_precision(v: Vector2<f64>) -> Vector2<f32> {
+    vec2(v.x as f32, v.y as f32)
+}
+
+impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
         for (idx1, idx2) in self.board.links.iter() {
-            let pos1 = self.board.points[*idx1 as usize].pos;
-            let pos2 = self.board.points[*idx2 as usize].pos;
+            let pos1 = reduce_precision(self.board.points[*idx1 as usize].pos);
+            let pos2 = reduce_precision(self.board.points[*idx2 as usize].pos);
             let dist = pos1.distance(pos2);
             let dir = (pos2 - pos1) / dist;
 
@@ -38,8 +42,7 @@ impl GameState {
             rotate_mat.y.y = dir.y;
 
             instances.push(Instance {
-                transform: (Matrix4::from_translation(Vector3::new(pos1.x, pos1.y, 0.0))
-                    * rotate_mat)
+                transform: (Matrix4::from_translation(vec3(pos1.x, pos1.y, 0.0)) * rotate_mat)
                     .into(),
                 color: [0.1, 0.1, 0.1],
             });
@@ -52,17 +55,18 @@ impl GameState {
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
-                continue;
+                //continue;
             }
+            let pos = reduce_precision(point.pos);
             instances.push(Instance {
-                transform: Matrix4::from_translation(Vector3::new(point.pos.x, point.pos.y, 0.0))
-                    .into(),
+                transform: Matrix4::from_translation(vec3(pos.x, pos.y, 0.0)).into(),
                 color: match point.ty {
                     StoneType::Empty => [0.0, 0.8, 0.0],
                     StoneType::Black => [0.0, 0.0, 0.0],
                     StoneType::White => [1.0, 1.0, 1.0],
                 },
-            })
+            });
+            //println!("transform ")
         }
         instances
     }

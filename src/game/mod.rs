@@ -1,7 +1,11 @@
-use cgmath::{abs_diff_eq, MetricSpace, Vector2};
+use std::{f64::consts::PI, ptr};
+
+use cgmath::{abs_diff_eq, MetricSpace, Vector2, Zero};
 
 pub mod render;
 use render::*;
+
+use crate::geometry::*;
 
 pub const MAX_STONES: u64 = 1024;
 pub const STONE_RADIUS: f32 = 0.4;
@@ -14,56 +18,77 @@ enum StoneType {
 }
 
 struct BoardPoint {
-    pos: Vector2<f32>,
+    pos: Vector2<f64>,
     neighbors: Vec<i32>,
     ty: StoneType,
 }
 
-struct Board {
+struct Board<SpinorT: Spinor> {
     points: Vec<BoardPoint>,
     links: Vec<(i32, i32)>,
+    neighbor_directions: Vec<SpinorT>,
 }
 
-impl Board {
-    fn make_square(width: u32, height: u32) -> Board {
+impl<SpinorT: Spinor> Board<SpinorT> {
+    fn make_board(neighbor_directions: Vec<SpinorT>, edge_len: usize) -> Self {
+        // TODO support even size probably?
+        assert!(edge_len % 2 == 1);
+
         let mut board = Board {
             points: Vec::new(),
             links: Vec::new(),
+            neighbor_directions: neighbor_directions.clone(),
         };
-        let pos_offset = Vector2::new(width as f32, height as f32) / 2.0;
 
-        for r in 0..height {
-            for c in 0..width {
-                let mut point = BoardPoint {
-                    pos: Vector2::new(c as f32, r as f32) - pos_offset,
-                    neighbors: Vec::new(),
-                    ty: StoneType::Empty,
-                };
-                let this_idx = board.points.len() as i32;
+        let mut cur_pos = Vector2::zero();
+        board.add_point(cur_pos);
 
-                // horrendous
-                for r2 in -1..2i32 {
-                    for c2 in -1..2i32 {
-                        if r2.abs() + c2.abs() != 1 {
-                            continue;
-                        }
-                        let i =
-                            board.find_point(Vector2::new(c2 as f32, r2 as f32) + point.pos, 0.1);
-                        if i >= 0 {
-                            point.neighbors.push(i);
-                            board.points[i as usize].neighbors.push(this_idx);
-                            board.links.push((i, this_idx));
-                        }
+        let mut test_count = 1;
+        for ring in 1..(edge_len / 2 + 1) {
+            for dir in neighbor_directions.iter() {
+                for i in 0..(2 * ring) {
+                    if i == 0 && ptr::eq(dir, &neighbor_directions[0]) {
+                        println!("turning");
+                        cur_pos = board.neighbor_directions.last().unwrap().apply(cur_pos);
+                    } else {
+                        cur_pos = dir.apply(cur_pos);
+                    }
+                    board.add_point(cur_pos);
+                    test_count += 1;
+                    if test_count >= 4000 {
+                        return board;
                     }
                 }
-                board.points.push(point);
             }
         }
 
         board
     }
 
-    fn find_point(&self, pos: Vector2<f32>, dist: f32) -> i32 {
+    fn add_point(&mut self, pos: Vector2<f64>) {
+        let mut point = BoardPoint {
+            pos,
+            neighbors: Vec::new(),
+            ty: StoneType::Empty,
+        };
+        let this_idx = self.points.len() as i32;
+
+        // not the best approach
+        for dir in self.neighbor_directions.iter() {
+            let i = self.find_point(dir.apply(point.pos), 0.1);
+            if i >= 0 {
+                point.neighbors.push(i);
+                self.points[i as usize].neighbors.push(this_idx);
+                self.links.push((i, this_idx));
+            }
+        }
+        self.points.push(point);
+
+        println!("adding point at {:?}", pos);
+    }
+
+    // TODO use some kind of spatial data structure for this?
+    fn find_point(&self, pos: Vector2<f64>, dist: f64) -> i32 {
         let dist2 = dist * dist;
         for (i, point) in self.points.iter().enumerate() {
             if pos.distance2(point.pos) <= dist2 {
@@ -79,15 +104,21 @@ enum Turn {
     White,
 }
 
-pub struct GameState {
-    board: Board,
+pub struct GameState<SpinorT: Spinor> {
+    board: Board<SpinorT>,
     turn: Turn,
     pub needs_render: bool,
 }
 
-impl GameState {
+impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
-        let board = Board::make_square(9, 9);
+        let neighbor_directions = vec![
+            SpinorT::translation(1.0, 0.0),
+            SpinorT::translation(1.0, PI / 2.0),
+            SpinorT::translation(1.0, PI),
+            SpinorT::translation(1.0, 3.0 * PI / 2.0),
+        ];
+        let board = Board::make_board(neighbor_directions, 5);
         Self {
             board,
             turn: Turn::Black,
@@ -159,8 +190,8 @@ impl GameState {
         true
     }
 
-    fn try_select_point(&mut self, pos: Vector2<f32>) -> bool {
-        let i = self.board.find_point(pos, STONE_RADIUS);
+    fn try_select_point(&mut self, pos: Vector2<f64>) -> bool {
+        let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
             let point = &mut self.board.points[i as usize];
             println!(
@@ -191,7 +222,7 @@ impl GameState {
         }
     }
 
-    pub fn select_point(&mut self, pos: Vector2<f32>) {
+    pub fn select_point(&mut self, pos: Vector2<f64>) {
         if self.try_select_point(pos) {
             self.turn = match self.turn {
                 Turn::Black => Turn::White,

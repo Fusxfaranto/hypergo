@@ -20,6 +20,8 @@ struct VertexOutput {
     @location(0) color: vec3<f32>,
 };
 
+// TODO consider processing spinors directly in shader, instead of pre-converting to matrix?
+// https://tech.metail.com/performance-quaternions-gpu/
 @vertex
 fn vs_main(
     model: VertexInput,

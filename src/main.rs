@@ -1,6 +1,6 @@
-use std::{iter, mem};
+use std::{f64::consts::PI, iter, mem};
 
-use cgmath::{abs_diff_eq, abs_diff_ne, Matrix4, SquareMatrix, Vector2, Vector4, Zero};
+use cgmath::{abs_diff_ne, vec2, vec4, Matrix4, One, SquareMatrix, Vector2, Zero};
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
@@ -11,8 +11,13 @@ use winit::{
 };
 
 mod game;
-use game::{render::Instance, STONE_RADIUS};
-use game::{GameState, MAX_STONES};
+use game::render::*;
+use game::*;
+
+mod geometry;
+use geometry::euclidian::*;
+use geometry::hyperbolic::*;
+use geometry::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -93,57 +98,6 @@ const LINK_VERTS: &[Vertex] = &[
 
 const LINK_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
 
-struct ViewState {
-    scale: f32,
-    camera: Matrix4<f32>,
-}
-
-impl ViewState {
-    fn new() -> Self {
-        let scale = 0.1;
-        let mut camera = Matrix4::identity();
-        camera.w.w = 1.0 / scale;
-
-        Self { scale, camera }
-    }
-
-    fn pixel_to_world_coords(&self, config: &SurfaceConfiguration, x: f64, y: f64) -> Vector2<f32> {
-        let v = self.camera.invert().unwrap()
-            * (Vector4::new(
-                2.0 * x as f32 / config.width as f32,
-                -2.0 * y as f32 / config.height as f32,
-                0.0,
-                1.0,
-            ) + Vector4::new(-1.0, 1.0, 0.0, 0.0));
-        Vector2::new(v.x, v.y) / v.w
-    }
-
-    // TODO ???????
-    fn pixel_delta_to_world(&self, config: &SurfaceConfiguration, x: f64, y: f64) -> Vector2<f32> {
-        let mut translationless_camera_inverse = Matrix4::identity();
-        translationless_camera_inverse.w.w = self.scale;
-        let v = translationless_camera_inverse
-            * Vector4::new(
-                1.0 * x as f32 / config.width as f32,
-                -1.0 * y as f32 / config.height as f32,
-                0.0,
-                1.0,
-            );
-        Vector2::new(v.x, v.y) / v.w * 2.1
-    }
-
-    fn adjust_scale(&mut self, amt: f32) {
-        self.scale *= amt + 1.0;
-        self.camera.w.w = 1.0 / self.scale;
-    }
-
-    fn translate(&mut self, delta: Vector2<f32>) {
-        println!("translate {:?}", delta);
-        self.camera.w.x += delta.x;
-        self.camera.w.y += delta.y;
-    }
-}
-
 struct InputState {
     forward: bool,
     left: bool,
@@ -198,7 +152,7 @@ impl InputState {
     }
 }
 
-struct State<'a> {
+struct State<'a, SpinorT: Spinor> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -223,14 +177,14 @@ struct State<'a> {
     window: &'a Window,
 
     input_state: InputState,
-    cursor_pos: Vector2<f32>,
-    view_state: ViewState,
-    game_state: GameState,
+    cursor_pos: Vector2<f64>,
+    view_state: ViewState<SpinorT>,
+    game_state: GameState<SpinorT>,
     is_dragging: bool,
 }
 
-impl<'a> State<'a> {
-    async fn new(window: &'a Window) -> State<'a> {
+impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
+    async fn new(window: &'a Window) -> Self {
         let input_state = InputState::new();
         let view_state = ViewState::new();
         let game_state = GameState::new();
@@ -419,7 +373,7 @@ impl<'a> State<'a> {
             uniform_bind_group,
             window,
             input_state,
-            cursor_pos: Vector2::new(f32::NAN, f32::NAN),
+            cursor_pos: vec2(f64::NAN, f64::NAN),
             view_state,
             game_state,
             is_dragging: false,
@@ -442,8 +396,9 @@ impl<'a> State<'a> {
     fn handle_mouse(&mut self, x: f64, y: f64) {
         //println!("handle_mouse {x} {y}");
         if self.is_dragging {
-            self.view_state
-                .translate(self.view_state.pixel_delta_to_world(&self.config, x, y));
+            // TODO
+            //self.view_state
+            //    .translate(self.view_state.pixel_delta_to_world(&self.config, x, y));
         }
     }
 
@@ -454,12 +409,10 @@ impl<'a> State<'a> {
         match event {
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll_amt = match delta {
-                    MouseScrollDelta::LineDelta(_, rows) => rows * 100.0,
-                    MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => {
-                        *scroll as f32
-                    }
+                    MouseScrollDelta::LineDelta(_, rows) => (*rows as f64) * 100.0,
+                    MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => *scroll,
                 };
-                const SCROLL_FACTOR: f32 = 0.001;
+                const SCROLL_FACTOR: f64 = 0.001;
                 self.view_state.adjust_scale(scroll_amt * SCROLL_FACTOR);
                 true
             }
@@ -500,22 +453,18 @@ impl<'a> State<'a> {
     }
 
     fn update(&mut self) {
-        const SPEED: f32 = 0.1;
-        let mut delta = Vector2::zero();
+        const SPEED: f64 = 0.1;
         if self.input_state.back {
-            delta.y += SPEED;
+            self.view_state.translate(SPEED, 3.0 * PI / 2.0);
         } else if self.input_state.forward {
-            delta.y -= SPEED;
+            self.view_state.translate(SPEED, PI / 2.0);
         }
         if self.input_state.left {
-            delta.x += SPEED;
+            self.view_state.translate(SPEED, PI);
         } else if self.input_state.right {
-            delta.x -= SPEED;
+            self.view_state.translate(SPEED, 0.0);
         }
-        if abs_diff_ne!(delta, Vector2::zero()) {
-            self.view_state.translate(delta);
-        }
-        self.uniform.transform = self.view_state.camera.into();
+        self.uniform.transform = self.view_state.get_camera_mat().into();
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -608,7 +557,7 @@ pub async fn run() {
         .build(&event_loop)
         .unwrap();
 
-    let mut state = State::new(&window).await;
+    let mut state = State::<SpinorEuclidian>::new(&window).await;
     let mut surface_configured = false;
 
     event_loop
