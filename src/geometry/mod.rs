@@ -6,15 +6,20 @@ use wgpu::SurfaceConfiguration;
 pub mod euclidian;
 pub mod hyperbolic;
 
-pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> {
-    fn identity() -> Self;
+pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> + One {
     fn translation(amt: f64, angle: f64) -> Self;
+    fn rotation(angle: f64) -> Self;
     fn reverse(&self) -> Self;
     fn apply(&self, v: Vector2<f64>) -> Vector2<f64>;
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
     where
         f32: AsPrimitive<S>,
         f64: AsPrimitive<S>;
+
+    // these aren't really tied to spinors, but they're tied to the geometry,
+    // so here they sit for now
+    fn distance(a: Vector2<f64>, b: Vector2<f64>) -> f64;
+    fn tiling_neighbor_directions() -> Vec<Vec<Self>>;
 }
 
 pub struct ViewState<SpinorT: Spinor> {
@@ -29,7 +34,7 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
 
         Self {
             scale,
-            camera: SpinorT::identity(),
+            camera: SpinorT::one(),
         }
     }
 
@@ -39,7 +44,7 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         x: f64,
         y: f64,
     ) -> Vector2<f64> {
-        self.camera.reverse().apply(
+        self.camera.apply(
             (1.0 / self.scale)
                 * vec2(
                     2.0 * x / config.width as f64 - 1.0,
@@ -75,6 +80,6 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         let mut scale_mat = Matrix4::<f32>::one();
         scale_mat.w.w = 1.0 / self.scale as f32;
 
-        scale_mat * self.camera.into_mat4()
+        scale_mat * self.camera.reverse().into_mat4()
     }
 }

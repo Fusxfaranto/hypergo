@@ -17,14 +17,15 @@ enum StoneType {
     White,
 }
 
-struct BoardPoint {
+struct BoardPoint<SpinorT: Spinor> {
     pos: Vector2<f64>,
+    transform: SpinorT,
     neighbors: Vec<i32>,
     ty: StoneType,
 }
 
 struct Board<SpinorT: Spinor> {
-    points: Vec<BoardPoint>,
+    points: Vec<BoardPoint<SpinorT>>,
     links: Vec<(i32, i32)>,
     neighbor_directions: Vec<SpinorT>,
 }
@@ -34,28 +35,27 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         // TODO support even size probably?
         assert!(edge_len % 2 == 1);
 
-        let mut board = Board {
+        let mut board = Self {
             points: Vec::new(),
             links: Vec::new(),
             neighbor_directions: neighbor_directions.clone(),
         };
 
-        let mut cur_pos = Vector2::zero();
-        board.add_point(cur_pos);
+        let mut cur_transform = SpinorT::one();
+        board.add_point(cur_transform);
 
         let mut test_count = 1;
         for ring in 1..(edge_len / 2 + 1) {
             for dir in neighbor_directions.iter() {
                 for i in 0..(2 * ring) {
                     if i == 0 && ptr::eq(dir, &neighbor_directions[0]) {
-                        println!("turning");
-                        cur_pos = board.neighbor_directions.last().unwrap().apply(cur_pos);
+                        cur_transform = *board.neighbor_directions.last().unwrap() * cur_transform;
                     } else {
-                        cur_pos = dir.apply(cur_pos);
+                        cur_transform = *dir * cur_transform;
                     }
-                    board.add_point(cur_pos);
+                    board.add_point(cur_transform);
                     test_count += 1;
-                    if test_count >= 4000 {
+                    if test_count >= 20000 {
                         return board;
                     }
                 }
@@ -65,9 +65,10 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         board
     }
 
-    fn add_point(&mut self, pos: Vector2<f64>) {
+    fn add_point(&mut self, transform: SpinorT) {
         let mut point = BoardPoint {
-            pos,
+            pos: transform.apply(Vector2::zero()),
+            transform,
             neighbors: Vec::new(),
             ty: StoneType::Empty,
         };
@@ -82,16 +83,14 @@ impl<SpinorT: Spinor> Board<SpinorT> {
                 self.links.push((i, this_idx));
             }
         }
+        println!("adding point at {:?}", point.pos);
         self.points.push(point);
-
-        println!("adding point at {:?}", pos);
     }
 
     // TODO use some kind of spatial data structure for this?
     fn find_point(&self, pos: Vector2<f64>, dist: f64) -> i32 {
-        let dist2 = dist * dist;
         for (i, point) in self.points.iter().enumerate() {
-            if pos.distance2(point.pos) <= dist2 {
+            if SpinorT::distance(pos, point.pos) <= dist {
                 return i as i32;
             }
         }
@@ -112,12 +111,8 @@ pub struct GameState<SpinorT: Spinor> {
 
 impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
-        let neighbor_directions = vec![
-            SpinorT::translation(1.0, 0.0),
-            SpinorT::translation(1.0, PI / 2.0),
-            SpinorT::translation(1.0, PI),
-            SpinorT::translation(1.0, 3.0 * PI / 2.0),
-        ];
+        // TODO select between multiple
+        let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
         let board = Board::make_board(neighbor_directions, 5);
         Self {
             board,

@@ -80,23 +80,23 @@ const STONE_VERTS: &[Vertex] = &[
 
 const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7];
 
-const LINK_WIDTH: f32 = 0.06;
+const LINK_WIDTH: f32 = 0.1;
 const LINK_VERTS: &[Vertex] = &[
     Vertex {
         position: [-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
     },
     Vertex {
-        position: [LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
+        position: [-LINK_WIDTH / 2.0, LINK_WIDTH / 2.0, 0.0],
     },
     Vertex {
-        position: [-LINK_WIDTH / 2.0, 1.0 + LINK_WIDTH / 2.0, 0.0],
+        position: [1.0 + LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
     },
     Vertex {
-        position: [LINK_WIDTH / 2.0, 1.0 + LINK_WIDTH / 2.0, 0.0],
+        position: [1.0 + LINK_WIDTH / 2.0, LINK_WIDTH / 2.0, 0.0],
     },
 ];
 
-const LINK_INDICES: &[u16] = &[0, 1, 2, 2, 1, 3];
+const LINK_INDICES: &[u16] = &[0, 2, 1, 1, 2, 3];
 
 struct InputState {
     forward: bool,
@@ -557,7 +557,9 @@ pub async fn run() {
         .build(&event_loop)
         .unwrap();
 
-    let mut state = State::<SpinorEuclidian>::new(&window).await;
+    use SpinorEuclidian as SpinorT;
+    //use SpinorHyperbolic as SpinorT;
+    let mut state = State::<SpinorT>::new(&window).await;
     let mut surface_configured = false;
 
     event_loop

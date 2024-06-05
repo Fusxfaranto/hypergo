@@ -1,4 +1,4 @@
-use std::ops;
+use std::{f64::consts::PI, ops};
 
 use cgmath::{assert_abs_diff_eq, vec2, vec4, Matrix, Matrix4, Vector2};
 
@@ -57,23 +57,49 @@ impl Spinor for SpinorEuclidian {
         .transpose() // TODO really?? why????
     }
 
-    fn identity() -> Self {
+    fn translation(amt: f64, angle: f64) -> Self {
+        // TODO ??? pretty much just guessing at this one
+        // particularly unsure the signs are right
+        let b2 = amt / 2.0;
         Self {
             s: 1.0,
             xy: 0.0,
+            yw: angle.sin() * b2,
+            wx: -angle.cos() * b2,
+        }
+    }
+
+    fn rotation(angle: f64) -> Self {
+        let t2 = angle / 2.0;
+        Self {
+            s: t2.cos(),
+            xy: t2.sin(),
             yw: 0.0,
             wx: 0.0,
         }
     }
 
-    fn translation(amt: f64, angle: f64) -> Self {
-        // TODO ??? pretty much just guessing at this one
-        let b2 = amt / 2.0;
+    fn distance(a: Vector2<f64>, b: Vector2<f64>) -> f64 {
+        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+    }
+
+    fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
+        vec![vec![
+            Self::translation(1.0, 0.0),
+            Self::translation(1.0, PI / 2.0),
+            Self::translation(1.0, PI),
+            Self::translation(1.0, 3.0 * PI / 2.0),
+        ]]
+    }
+}
+
+impl One for SpinorEuclidian {
+    fn one() -> Self {
         Self {
             s: 1.0,
             xy: 0.0,
-            yw: -angle.sin() * b2,
-            wx: angle.cos() * b2,
+            yw: 0.0,
+            wx: 0.0,
         }
     }
 }

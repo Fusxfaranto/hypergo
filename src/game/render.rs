@@ -1,6 +1,6 @@
 use std::mem;
 
-use cgmath::{vec2, vec3, Matrix4, SquareMatrix, Vector3};
+use cgmath::{vec2, vec3, InnerSpace, Matrix4, SquareMatrix, Vector3};
 
 use super::*;
 
@@ -30,6 +30,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
         for (idx1, idx2) in self.board.links.iter() {
+            /*
             let pos1 = reduce_precision(self.board.points[*idx1 as usize].pos);
             let pos2 = reduce_precision(self.board.points[*idx2 as usize].pos);
             let dist = pos1.distance(pos2);
@@ -45,6 +46,15 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 transform: (Matrix4::from_translation(vec3(pos1.x, pos1.y, 0.0)) * rotate_mat)
                     .into(),
                 color: [0.1, 0.1, 0.1],
+            }); */
+
+            let tf1 = self.board.points[*idx1 as usize].transform;
+            let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
+            let angle = -rel_pos2.y.atan2(rel_pos2.x);
+
+            instances.push(Instance {
+                transform: (tf1 * SpinorT::rotation(angle)).into_mat4().into(),
+                color: [0.1, 0.1, 0.1],
             });
         }
         instances
@@ -55,11 +65,11 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
-                //continue;
+                continue;
             }
-            let pos = reduce_precision(point.pos);
+            //let pos = reduce_precision(point.pos);
             instances.push(Instance {
-                transform: Matrix4::from_translation(vec3(pos.x, pos.y, 0.0)).into(),
+                transform: point.transform.into_mat4().into(),
                 color: match point.ty {
                     StoneType::Empty => [0.0, 0.8, 0.0],
                     StoneType::Black => [0.0, 0.0, 0.0],

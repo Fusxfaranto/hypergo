@@ -1,6 +1,8 @@
-use std::ops;
+use std::{f64::consts::PI, ops};
 
-use cgmath::{assert_abs_diff_eq, vec2, vec4, BaseFloat, Matrix4, Vector2};
+use cgmath::{
+    assert_abs_diff_eq, num_traits::Pow, vec2, vec4, BaseFloat, Matrix, Matrix4, Vector2,
+};
 
 use super::*;
 
@@ -17,8 +19,7 @@ impl Spinor for SpinorHyperbolic {
         // TODO faster implementation
         let m = self.into_mat4();
         let v_out = m * vec4(v.x, v.y, 0.0, 1.0);
-        assert_abs_diff_eq!(v_out.w, 1.0);
-        return vec2(v_out.x, v_out.y);
+        return vec2(v_out.x, v_out.y) / v_out.w;
     }
 
     fn reverse(&self) -> Self {
@@ -55,7 +56,7 @@ impl Spinor for SpinorHyperbolic {
             (2.0 * self.s * self.yw - 2.0 * self.wx * self.xy).as_(),
             0.0.as_(),
             (self.s * self.s + self.wx * self.wx + self.yw * self.yw + self.xy * self.xy).as_(),
-        ) */
+        )*/
         Matrix4::new(
             (self.s * self.s + self.wx * self.wx - self.yw * self.yw - self.xy * self.xy).as_(),
             (2.0 * self.s * self.xy - 2.0 * self.wx * self.yw).as_(),
@@ -74,15 +75,7 @@ impl Spinor for SpinorHyperbolic {
             0.0.as_(),
             (self.s * self.s + self.wx * self.wx + self.yw * self.yw + self.xy * self.xy).as_(),
         )
-    }
-
-    fn identity() -> Self {
-        Self {
-            s: 1.0,
-            xy: 0.0,
-            yw: 0.0,
-            wx: 0.0,
-        }
+        .transpose()
     }
 
     fn translation(amt: f64, angle: f64) -> Self {
@@ -92,6 +85,42 @@ impl Spinor for SpinorHyperbolic {
             xy: 0.0,
             yw: angle.cos() * b2.sinh(),
             wx: angle.sin() * b2.sinh(),
+        }
+    }
+
+    fn rotation(angle: f64) -> Self {
+        let t2 = angle / 2.0;
+        Self {
+            s: t2.cos(),
+            xy: t2.sin(),
+            yw: 0.0,
+            wx: 0.0,
+        }
+    }
+
+    fn distance(a: Vector2<f64>, b: Vector2<f64>) -> f64 {
+        // TODO wrong?
+        (1.0 - (a.x - b.x).powi(2) - (a.y - b.y).powi(2)).acosh()
+    }
+
+    fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
+        // TODO
+        vec![vec![
+            Self::translation(1.0, 0.0),
+            Self::translation(1.0, PI / 2.0),
+            Self::translation(1.0, PI),
+            Self::translation(1.0, 3.0 * PI / 2.0),
+        ]]
+    }
+}
+
+impl One for SpinorHyperbolic {
+    fn one() -> Self {
+        Self {
+            s: 1.0,
+            xy: 0.0,
+            yw: 0.0,
+            wx: 0.0,
         }
     }
 }
