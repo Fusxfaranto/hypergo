@@ -27,13 +27,13 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let mut instances = Vec::new();
         // intentionally using euclidian norm
         let link_len = self.board.neighbor_directions[0]
-            .apply(Vector2::zero())
-            .magnitude();
+            .apply(SpinorT::Point::zero())
+            .flat_magnitude();
         let stretch_mat = Matrix4::from_nonuniform_scale(link_len as f32, 1.0, 1.0);
         for (idx1, idx2) in self.board.links.iter() {
             let tf1 = self.board.points[*idx1 as usize].transform;
             let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
-            let angle = -rel_pos2.y.atan2(rel_pos2.x);
+            let angle = -rel_pos2.angle();
 
             instances.push(Instance {
                 transform: ((tf1 * SpinorT::rotation(angle)).into_mat4() * stretch_mat).into(),

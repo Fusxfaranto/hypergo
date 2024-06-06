@@ -189,10 +189,11 @@ struct State<'a, SpinorT: Spinor> {
     window: &'a Window,
 
     input_state: InputState,
-    cursor_pos: Vector2<f64>,
+    cursor_pos: SpinorT::Point,
     view_state: ViewState<SpinorT>,
     game_state: GameState<SpinorT>,
-    drag_start: Option<Vector2<f64>>,
+    drag_start: Option<SpinorT::Point>,
+    last_drag_pos: SpinorT::Point,
 }
 
 impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
@@ -385,10 +386,11 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             uniform_bind_group,
             window,
             input_state,
-            cursor_pos: vec2(f64::NAN, f64::NAN),
+            cursor_pos: SpinorT::Point::zero(),
             view_state,
             game_state,
             drag_start: None,
+            last_drag_pos: SpinorT::Point::zero(),
         }
     }
 
@@ -487,8 +489,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
 
         if let Some(pos) = self.drag_start {
-            let to_pos = self.cursor_pos;
-            self.view_state.set_drag(pos, to_pos);
+            if self.last_drag_pos != self.cursor_pos {
+                self.view_state.set_drag(pos, self.cursor_pos);
+                self.last_drag_pos = self.cursor_pos;
+            }
         }
 
         self.uniform.transform = self.view_state.get_camera_mat().into();

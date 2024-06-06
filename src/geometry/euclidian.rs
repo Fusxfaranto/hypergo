@@ -5,6 +5,58 @@ use cgmath::{assert_abs_diff_eq, vec2, vec4, Matrix, Matrix4, Vector2, Zero};
 use super::*;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+pub struct PointEuclidian {
+    x: f64,
+    y: f64,
+    // projective coordinate is always 1, no reason to keep that around
+    // w: f64,
+}
+
+impl Point for PointEuclidian {
+    fn distance(self, b: Self) -> f64 {
+        ((self.x - b.x).powi(2) + (self.y - b.y).powi(2)).sqrt()
+    }
+    fn zero() -> Self {
+        Self { x: 0.0, y: 0.0 }
+    }
+
+    fn from_flat(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+
+    fn angle(&self) -> f64 {
+        self.y.atan2(self.x)
+    }
+
+    fn flat_magnitude(&self) -> f64 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
+}
+
+impl AbsDiffEq for PointEuclidian {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-9
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        f64::abs_diff_eq(&self.x, &other.x, epsilon) && f64::abs_diff_eq(&self.y, &other.y, epsilon)
+    }
+}
+
+impl ops::Mul<f64> for PointEuclidian {
+    type Output = PointEuclidian;
+
+    fn mul(self, rhs: f64) -> Self {
+        Self {
+            x: rhs * self.x,
+            y: rhs * self.y,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SpinorEuclidian {
     s: f64,
     xy: f64,
@@ -13,12 +65,17 @@ pub struct SpinorEuclidian {
 }
 
 impl Spinor for SpinorEuclidian {
-    fn apply(&self, v: Vector2<f64>) -> Vector2<f64> {
+    type Point = PointEuclidian;
+
+    fn apply(&self, v: Self::Point) -> Self::Point {
         // TODO faster implementation
         let m = self.into_mat4();
         let v_out = m * vec4(v.x, v.y, 0.0, 1.0);
         assert_abs_diff_eq!(v_out.w, 1.0, epsilon = 1e-6);
-        return vec2(v_out.x, v_out.y);
+        return Self::Point {
+            x: v_out.x,
+            y: v_out.y,
+        };
     }
 
     fn reverse(&self) -> Self {
@@ -67,7 +124,7 @@ impl Spinor for SpinorEuclidian {
         }
     }
 
-    fn translation_to(v: Vector2<f64>) -> Self {
+    fn translation_to(v: Self::Point) -> Self {
         Self {
             s: 1.0,
             xy: 0.0,
@@ -84,10 +141,6 @@ impl Spinor for SpinorEuclidian {
             yw: 0.0,
             wx: 0.0,
         }
-    }
-
-    fn distance(a: Vector2<f64>, b: Vector2<f64>) -> f64 {
-        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
     }
 
     fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
@@ -147,17 +200,17 @@ mod tests {
     #[test]
     fn test_translation() {
         // TODO is this actually how it should be?
-        let v = vec2(0.0, 1.0);
+        let v = PointEuclidian::from_flat(0.0, 1.0);
         let s = SpinorEuclidian::translation(1.0, 0.0);
-        assert_abs_diff_eq!(s.apply(Vector2::zero()), v);
-        assert_abs_diff_eq!(s.reverse().apply(v), Vector2::zero());
+        assert_abs_diff_eq!(s.apply(PointEuclidian::zero()), v);
+        assert_abs_diff_eq!(s.reverse().apply(v), PointEuclidian::zero());
     }
 
     #[test]
     fn test_translation_to() {
-        let v = vec2(0.7, -0.9);
+        let v = PointEuclidian::from_flat(0.7, -0.3);
         let s = SpinorEuclidian::translation_to(v);
-        assert_abs_diff_eq!(s.apply(Vector2::zero()), v);
-        assert_abs_diff_eq!(s.reverse().apply(v), Vector2::zero());
+        assert_abs_diff_eq!(s.apply(PointEuclidian::zero()), v);
+        assert_abs_diff_eq!(s.reverse().apply(v), PointEuclidian::zero());
     }
 }

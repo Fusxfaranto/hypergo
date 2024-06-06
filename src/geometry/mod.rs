@@ -1,26 +1,41 @@
+use std::fmt::Debug;
 use std::ops;
 
-use cgmath::InnerSpace;
 use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, Vector2};
+use cgmath::{InnerSpace, Zero};
 use wgpu::SurfaceConfiguration;
 
 pub mod euclidian;
 pub mod hyperbolic;
 
+pub trait Point: Copy + Clone + Debug + PartialEq + AbsDiffEq // + ops::Mul<f64, Output = Self>
+{
+    fn distance(self, b: Self) -> f64;
+
+    fn zero() -> Self;
+    fn from_flat(x: f64, y: f64) -> Self;
+
+    fn angle(&self) -> f64;
+    fn flat_magnitude(&self) -> f64;
+
+    fn from_flat_vec(v: Vector2<f64>) -> Self {
+        Self::from_flat(v.x, v.y)
+    }
+}
+
 pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> + One + AbsDiffEq {
+    type Point: Point;
+
     fn translation(amt: f64, angle: f64) -> Self;
-    fn translation_to(v: Vector2<f64>) -> Self;
+    fn translation_to(v: Self::Point) -> Self;
     fn rotation(angle: f64) -> Self;
     fn reverse(&self) -> Self;
-    fn apply(&self, v: Vector2<f64>) -> Vector2<f64>;
+    fn apply(&self, v: Self::Point) -> Self::Point;
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
     where
         f32: AsPrimitive<S>,
         f64: AsPrimitive<S>;
 
-    // these aren't really tied to spinors, but they're tied to the geometry,
-    // so here they sit for now
-    fn distance(a: Vector2<f64>, b: Vector2<f64>) -> f64;
     fn tiling_neighbor_directions() -> Vec<Vec<Self>>;
 }
 
@@ -47,7 +62,7 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         config: &SurfaceConfiguration,
         x: f64,
         y: f64,
-    ) -> Vector2<f64> {
+    ) -> SpinorT::Point {
         let scaled = (1.0 / self.scale)
             * vec2(
                 2.0 * x / config.width as f64 - 1.0,
@@ -62,33 +77,19 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
 
         #[cfg(not(feature = "euclidian_geometry"))]
         fn limit(v: Vector2<f64>) -> Vector2<f64> {
-            const LIMIT: f64 = 0.8;
-            let mag2 = v.magnitude2();
+            const LIMIT: f64 = 0.99;
+            let mag = v.magnitude2();
             //println!("{mag2}");
-            if mag2 < LIMIT {
+            if mag < LIMIT {
                 v
             } else {
-                v * (LIMIT / mag2).sqrt()
+                v * (LIMIT / mag).sqrt()
             }
         }
 
-        self.camera.apply(limit(scaled))
+        self.camera
+            .apply(SpinorT::Point::from_flat_vec(limit(scaled)))
     }
-
-    // TODO ???????
-    /*
-    fn pixel_delta_to_world(&self, config: &SurfaceConfiguration, x: f64, y: f64) -> Vector2<f32> {
-        let mut translationless_camera_inverse = Matrix4::identity();
-        translationless_camera_inverse.w.w = self.scale;
-        let v = translationless_camera_inverse
-            * vec4(
-                1.0 * x as f32 / config.width as f32,
-                -1.0 * y as f32 / config.height as f32,
-                0.0,
-                1.0,
-            );
-        vec2(v.x, v.y) / v.w * 2.1
-    } */
 
     pub fn adjust_scale(&mut self, amt: f64) {
         self.scale *= amt + 1.0;
@@ -102,10 +103,15 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         self.camera = self.camera * SpinorT::rotation(angle);
     }
 
-    pub fn set_drag(&mut self, pos_from: Vector2<f64>, pos_to: Vector2<f64>) {
+    // TODO something not exactly right with how this works
+    pub fn set_drag(&mut self, pos_from: SpinorT::Point, pos_to: SpinorT::Point) {
         //println!("pos_from {:?}, pos_to {:?}", pos_from, pos_to);
         self.pending_camera =
-            SpinorT::translation_to(pos_to).reverse() * SpinorT::translation_to(pos_from)
+            SpinorT::translation_to(pos_to).reverse() * SpinorT::translation_to(pos_from);
+
+        // TODO would really prefer to be able to do this but it gets scummy
+        // fixable without terrible hacks?
+        //self.apply_drag();
     }
 
     pub fn apply_drag(&mut self) {

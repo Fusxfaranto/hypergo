@@ -18,7 +18,7 @@ enum StoneType {
 }
 
 struct BoardPoint<SpinorT: Spinor> {
-    pos: Vector2<f64>,
+    pos: SpinorT::Point,
     transform: SpinorT,
     neighbors: Vec<i32>,
     ty: StoneType,
@@ -86,10 +86,10 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             for i in start_i..l {
                 for dir in chebyshev_dirs.iter() {
                     let t = *dir * board.points[i].transform;
-                    if board.find_point(t.apply(Vector2::zero()), 1e-3) == -1 {
+                    if board.find_point(t.apply(SpinorT::Point::zero()), 1e-3) == -1 {
                         board.add_point(t);
                         test_count += 1;
-                        if test_count >= 800000 {
+                        if test_count >= 800000000 {
                             return board;
                         }
                     }
@@ -103,7 +103,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
 
     fn add_point(&mut self, transform: SpinorT) {
         let mut point = BoardPoint {
-            pos: transform.apply(Vector2::zero()),
+            pos: transform.apply(SpinorT::Point::zero()),
             transform,
             neighbors: Vec::new(),
             ty: StoneType::Empty,
@@ -114,7 +114,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         // not the best approach
         for dir in self.neighbor_directions.iter() {
             //let i = self.find_point(dir.apply(point.pos), 0.1);
-            let checking_pos = (point.transform * *dir).apply(Vector2::zero());
+            let checking_pos = (point.transform * *dir).apply(SpinorT::Point::zero());
             println!("checking for neighbor at  {:?}", checking_pos);
             let i = self.find_point(checking_pos, 0.1);
             if i >= 0 {
@@ -128,13 +128,10 @@ impl<SpinorT: Spinor> Board<SpinorT> {
     }
 
     // TODO use some kind of spatial data structure for this?
-    fn find_point(&self, pos: Vector2<f64>, dist: f64) -> i32 {
+    fn find_point(&self, pos: SpinorT::Point, dist: f64) -> i32 {
         for (i, point) in self.points.iter().enumerate() {
-            if SpinorT::distance(pos, point.pos) <= dist {
+            if pos.distance(point.pos) <= dist {
                 return i as i32;
-            }
-            if SpinorT::distance(pos, point.pos) <= 2.0 * dist {
-                println!("near miss with {:?}", i);
             }
         }
         -1
@@ -156,7 +153,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
         // TODO select between multiple
         let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
-        let board = Board::make_board(neighbor_directions, 9);
+        let board = Board::make_board(neighbor_directions, 11);
         Self {
             board,
             turn: Turn::Black,
@@ -228,7 +225,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         true
     }
 
-    fn try_select_point(&mut self, pos: Vector2<f64>) -> bool {
+    fn try_select_point(&mut self, pos: SpinorT::Point) -> bool {
         let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
             let point = &mut self.board.points[i as usize];
@@ -260,7 +257,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         }
     }
 
-    pub fn select_point(&mut self, pos: Vector2<f64>) {
+    pub fn select_point(&mut self, pos: SpinorT::Point) {
         if self.try_select_point(pos) {
             self.turn = match self.turn {
                 Turn::Black => Turn::White,
