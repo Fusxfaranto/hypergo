@@ -1,6 +1,6 @@
 use std::{f64::consts::PI, ops};
 
-use cgmath::{assert_abs_diff_eq, assert_relative_eq, vec2, vec4, Matrix, Matrix4, Vector2};
+use cgmath::{assert_abs_diff_eq, vec2, vec4, Matrix, Matrix4, Vector2, Zero};
 
 use super::*;
 
@@ -58,14 +58,21 @@ impl Spinor for SpinorEuclidian {
     }
 
     fn translation(amt: f64, angle: f64) -> Self {
-        // TODO ??? pretty much just guessing at this one
-        // particularly unsure the signs are right
         let b2 = amt / 2.0;
         Self {
             s: 1.0,
             xy: 0.0,
             yw: angle.cos() * b2,
             wx: angle.sin() * b2,
+        }
+    }
+
+    fn translation_to(v: Vector2<f64>) -> Self {
+        Self {
+            s: 1.0,
+            xy: 0.0,
+            yw: v.y / 2.0,
+            wx: -v.x / 2.0,
         }
     }
 
@@ -130,5 +137,27 @@ impl AbsDiffEq for SpinorEuclidian {
             && f64::abs_diff_eq(&self.xy, &other.xy, epsilon)
             && f64::abs_diff_eq(&self.yw, &other.yw, epsilon)
             && f64::abs_diff_eq(&self.wx, &other.wx, epsilon)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_translation() {
+        // TODO is this actually how it should be?
+        let v = vec2(0.0, 1.0);
+        let s = SpinorEuclidian::translation(1.0, 0.0);
+        assert_abs_diff_eq!(s.apply(Vector2::zero()), v);
+        assert_abs_diff_eq!(s.reverse().apply(v), Vector2::zero());
+    }
+
+    #[test]
+    fn test_translation_to() {
+        let v = vec2(0.7, -0.9);
+        let s = SpinorEuclidian::translation_to(v);
+        assert_abs_diff_eq!(s.apply(Vector2::zero()), v);
+        assert_abs_diff_eq!(s.reverse().apply(v), Vector2::zero());
     }
 }

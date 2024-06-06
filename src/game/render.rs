@@ -48,7 +48,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
-                //continue;
+                continue;
             }
 
             instances.push(Instance {

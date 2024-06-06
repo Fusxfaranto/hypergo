@@ -1,9 +1,11 @@
 use std::{f64::consts::PI, ops};
 
 use cgmath::{
-    assert_abs_diff_eq, num_traits::Pow, vec2, vec3, vec4, BaseFloat, InnerSpace, Matrix, Matrix4,
-    Vector2, Vector3,
+    assert_abs_diff_eq,
+    num_traits::{Float, Pow},
+    vec2, vec3, vec4, BaseFloat, InnerSpace, Matrix, Matrix4, Vector2, Vector3, Zero,
 };
+use more_asserts::assert_gt;
 
 use super::*;
 
@@ -89,6 +91,18 @@ impl Spinor for SpinorHyperbolic {
         }
     }
 
+    fn translation_to(v: Vector2<f64>) -> Self {
+        let v_mag = v.magnitude();
+        let b2 = v_mag.atanh() / 2.0;
+        let v_norm = v / v_mag;
+        Self {
+            s: b2.cosh(),
+            xy: 0.0,
+            yw: v_norm.y * b2.sinh(),
+            wx: -v_norm.x * b2.sinh(),
+        }
+    }
+
     fn rotation(angle: f64) -> Self {
         let t2 = angle / 2.0;
         Self {
@@ -108,7 +122,9 @@ impl Spinor for SpinorHyperbolic {
         let a_h = to_hyperboloid(a);
         let b_h = to_hyperboloid(b);
         //println!("a {:?} {:?}, b {:?} {:?}", a, a_h, b, b_h);
-        let d = (a_h.z * b_h.z - a_h.x * b_h.x - a_h.y * b_h.y).acosh();
+        let bl = a_h.z * b_h.z - a_h.x * b_h.x - a_h.y * b_h.y;
+        assert_gt!(bl, 0.99);
+        let d = bl.max(1.0).acosh();
         //println!("d {d}");
         d
     }
@@ -161,5 +177,27 @@ impl AbsDiffEq for SpinorHyperbolic {
             && f64::abs_diff_eq(&self.xy, &other.xy, epsilon)
             && f64::abs_diff_eq(&self.yw, &other.yw, epsilon)
             && f64::abs_diff_eq(&self.wx, &other.wx, epsilon)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use more_asserts::assert_lt;
+
+    use super::*;
+
+    #[test]
+    fn test_translation_to() {
+        let v = vec2(0.7, -0.4);
+        let s = SpinorHyperbolic::translation_to(v);
+        assert_abs_diff_eq!(s.apply(Vector2::zero()), v, epsilon = 1e-9);
+        assert_abs_diff_eq!(s.reverse().apply(v), Vector2::zero(), epsilon = 1e-9);
+    }
+
+    #[test]
+    fn test_distance() {
+        let a = vec2(-7.617857059728038e-33, 0.7861513777574234);
+        let b = vec2(0.0, 0.7861513777574233);
+        assert_lt!(SpinorHyperbolic::distance(a, b), 1.0);
     }
 }

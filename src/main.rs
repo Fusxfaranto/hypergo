@@ -192,7 +192,7 @@ struct State<'a, SpinorT: Spinor> {
     cursor_pos: Vector2<f64>,
     view_state: ViewState<SpinorT>,
     game_state: GameState<SpinorT>,
-    is_dragging: bool,
+    drag_start: Option<Vector2<f64>>,
 }
 
 impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
@@ -388,7 +388,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             cursor_pos: vec2(f64::NAN, f64::NAN),
             view_state,
             game_state,
-            is_dragging: false,
+            drag_start: None,
         }
     }
 
@@ -404,7 +404,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             self.surface.configure(&self.device, &self.config);
         }
     }
-
+    /*
     fn handle_mouse(&mut self, x: f64, y: f64) {
         //println!("handle_mouse {x} {y}");
         if self.is_dragging {
@@ -412,7 +412,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             //self.view_state
             //    .translate(self.view_state.pixel_delta_to_world(&self.config, x, y));
         }
-    }
+    } */
 
     fn input(&mut self, event: &WindowEvent) -> bool {
         if self.input_state.process(event) {
@@ -431,11 +431,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             // TODO doesn't quite work when camera moves without cursor moving
             // can i just fetch cursor position and/or force update?
             WindowEvent::CursorMoved { position, .. } => {
-                if !self.is_dragging {
-                    self.cursor_pos =
-                        self.view_state
-                            .pixel_to_world_coords(&self.config, position.x, position.y);
-                }
+                self.cursor_pos =
+                    self.view_state
+                        .pixel_to_world_coords(&self.config, position.x, position.y);
                 true
             }
             WindowEvent::MouseInput {
@@ -455,8 +453,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 ..
             } => {
                 match *state {
-                    ElementState::Pressed => self.is_dragging = true,
-                    ElementState::Released => self.is_dragging = false,
+                    ElementState::Pressed => {
+                        self.drag_start = Some(self.cursor_pos);
+                    }
+                    ElementState::Released => {
+                        self.view_state.apply_drag();
+                        self.drag_start = None;
+                    }
                 }
                 true
             }
@@ -482,6 +485,12 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         } else if self.input_state.ccw {
             self.view_state.rotate(-ANGULAR_SPEED);
         }
+
+        if let Some(pos) = self.drag_start {
+            let to_pos = self.cursor_pos;
+            self.view_state.set_drag(pos, to_pos);
+        }
+
         self.uniform.transform = self.view_state.get_camera_mat().into();
         self.queue.write_buffer(
             &self.uniform_buffer,
@@ -585,10 +594,10 @@ pub async fn run() {
 
     event_loop
         .run(move |event, control_flow| match event {
-            Event::DeviceEvent {
+            /*             Event::DeviceEvent {
                 event: DeviceEvent::MouseMotion { delta: (x, y) },
                 ..
-            } => state.handle_mouse(x, y),
+            } => state.handle_mouse(x, y), */
             Event::WindowEvent {
                 ref event,
                 window_id,

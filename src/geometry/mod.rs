@@ -1,5 +1,6 @@
 use std::ops;
 
+use cgmath::InnerSpace;
 use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, Vector2};
 use wgpu::SurfaceConfiguration;
 
@@ -8,6 +9,7 @@ pub mod hyperbolic;
 
 pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> + One + AbsDiffEq {
     fn translation(amt: f64, angle: f64) -> Self;
+    fn translation_to(v: Vector2<f64>) -> Self;
     fn rotation(angle: f64) -> Self;
     fn reverse(&self) -> Self;
     fn apply(&self, v: Vector2<f64>) -> Vector2<f64>;
@@ -26,15 +28,17 @@ pub struct ViewState<SpinorT: Spinor> {
     // TODO can we scale with unnormalized spinor instead of keeping separate scale?
     scale: f64,
     camera: SpinorT,
+    pending_camera: SpinorT,
 }
 
 impl<SpinorT: Spinor> ViewState<SpinorT> {
     pub fn new() -> Self {
-        let scale = 0.5;
+        let scale = 0.8;
 
         Self {
             scale,
             camera: SpinorT::one(),
+            pending_camera: SpinorT::one(),
         }
     }
 
@@ -44,13 +48,31 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         x: f64,
         y: f64,
     ) -> Vector2<f64> {
-        self.camera.apply(
-            (1.0 / self.scale)
-                * vec2(
-                    2.0 * x / config.width as f64 - 1.0,
-                    -2.0 * y / config.height as f64 + 1.0,
-                ),
-        )
+        let scaled = (1.0 / self.scale)
+            * vec2(
+                2.0 * x / config.width as f64 - 1.0,
+                -2.0 * y / config.height as f64 + 1.0,
+            );
+
+        // TODO hack
+        #[cfg(feature = "euclidian_geometry")]
+        fn limit(v: Vector2<f64>) -> Vector2<f64> {
+            v
+        }
+
+        #[cfg(not(feature = "euclidian_geometry"))]
+        fn limit(v: Vector2<f64>) -> Vector2<f64> {
+            const LIMIT: f64 = 0.8;
+            let mag2 = v.magnitude2();
+            //println!("{mag2}");
+            if mag2 < LIMIT {
+                v
+            } else {
+                v * (LIMIT / mag2).sqrt()
+            }
+        }
+
+        self.camera.apply(limit(scaled))
     }
 
     // TODO ???????
@@ -80,10 +102,21 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         self.camera = self.camera * SpinorT::rotation(angle);
     }
 
+    pub fn set_drag(&mut self, pos_from: Vector2<f64>, pos_to: Vector2<f64>) {
+        //println!("pos_from {:?}, pos_to {:?}", pos_from, pos_to);
+        self.pending_camera =
+            SpinorT::translation_to(pos_to).reverse() * SpinorT::translation_to(pos_from)
+    }
+
+    pub fn apply_drag(&mut self) {
+        self.camera = self.pending_camera * self.camera;
+        self.pending_camera = SpinorT::one();
+    }
+
     pub fn get_camera_mat(&self) -> Matrix4<f32> {
         let mut scale_mat = Matrix4::<f32>::one();
         scale_mat.w.w = 1.0 / self.scale as f32;
 
-        scale_mat * self.camera.reverse().into_mat4()
+        scale_mat * (self.pending_camera * self.camera).reverse().into_mat4()
     }
 }

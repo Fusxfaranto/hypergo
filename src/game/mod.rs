@@ -85,11 +85,11 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             let l = board.points.len();
             for i in start_i..l {
                 for dir in chebyshev_dirs.iter() {
-                    let t = board.points[i].transform * *dir;
+                    let t = *dir * board.points[i].transform;
                     if board.find_point(t.apply(Vector2::zero()), 1e-3) == -1 {
                         board.add_point(t);
                         test_count += 1;
-                        if test_count >= 6 {
+                        if test_count >= 800000 {
                             return board;
                         }
                     }
@@ -110,16 +110,20 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         };
         let this_idx = self.points.len() as i32;
 
+        println!("adding point {:?} at {:?}", self.points.len(), point.pos);
         // not the best approach
         for dir in self.neighbor_directions.iter() {
-            let i = self.find_point(dir.apply(point.pos), 0.1);
+            //let i = self.find_point(dir.apply(point.pos), 0.1);
+            let checking_pos = (point.transform * *dir).apply(Vector2::zero());
+            println!("checking for neighbor at  {:?}", checking_pos);
+            let i = self.find_point(checking_pos, 0.1);
             if i >= 0 {
                 point.neighbors.push(i);
                 self.points[i as usize].neighbors.push(this_idx);
                 self.links.push((i, this_idx));
+                println!("adding link {:?}", self.links.last().unwrap());
             }
         }
-        println!("adding point at {:?}", point.pos);
         self.points.push(point);
     }
 
@@ -128,6 +132,9 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         for (i, point) in self.points.iter().enumerate() {
             if SpinorT::distance(pos, point.pos) <= dist {
                 return i as i32;
+            }
+            if SpinorT::distance(pos, point.pos) <= 2.0 * dist {
+                println!("near miss with {:?}", i);
             }
         }
         -1
@@ -149,7 +156,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
         // TODO select between multiple
         let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
-        let board = Board::make_board(neighbor_directions, 3);
+        let board = Board::make_board(neighbor_directions, 9);
         Self {
             board,
             turn: Turn::Black,
