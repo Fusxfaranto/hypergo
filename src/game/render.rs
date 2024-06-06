@@ -22,38 +22,21 @@ impl Instance {
     }
 }
 
-fn reduce_precision(v: Vector2<f64>) -> Vector2<f32> {
-    vec2(v.x as f32, v.y as f32)
-}
-
 impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
+        // intentionally using euclidian norm
+        let link_len = self.board.neighbor_directions[0]
+            .apply(Vector2::zero())
+            .magnitude();
+        let stretch_mat = Matrix4::from_nonuniform_scale(link_len as f32, 1.0, 1.0);
         for (idx1, idx2) in self.board.links.iter() {
-            /*
-            let pos1 = reduce_precision(self.board.points[*idx1 as usize].pos);
-            let pos2 = reduce_precision(self.board.points[*idx2 as usize].pos);
-            let dist = pos1.distance(pos2);
-            let dir = (pos2 - pos1) / dist;
-
-            let mut rotate_mat = Matrix4::identity();
-            rotate_mat.x.x = dir.y;
-            rotate_mat.x.y = -dir.x;
-            rotate_mat.y.x = dir.x;
-            rotate_mat.y.y = dir.y;
-
-            instances.push(Instance {
-                transform: (Matrix4::from_translation(vec3(pos1.x, pos1.y, 0.0)) * rotate_mat)
-                    .into(),
-                color: [0.1, 0.1, 0.1],
-            }); */
-
             let tf1 = self.board.points[*idx1 as usize].transform;
             let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
             let angle = -rel_pos2.y.atan2(rel_pos2.x);
 
             instances.push(Instance {
-                transform: (tf1 * SpinorT::rotation(angle)).into_mat4().into(),
+                transform: ((tf1 * SpinorT::rotation(angle)).into_mat4() * stretch_mat).into(),
                 color: [0.1, 0.1, 0.1],
             });
         }
@@ -65,9 +48,9 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
-                continue;
+                //continue;
             }
-            //let pos = reduce_precision(point.pos);
+
             instances.push(Instance {
                 transform: point.transform.into_mat4().into(),
                 color: match point.ty {

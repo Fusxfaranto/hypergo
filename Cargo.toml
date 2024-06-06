@@ -17,3 +17,6 @@ cgmath = "0.18"
 anyhow = "1.0"
 fs_extra = "1.2"
 glob = "0.3"
+
+[features]
+euclidian_geometry = []

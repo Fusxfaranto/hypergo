@@ -1,12 +1,12 @@
 use std::ops;
 
-use cgmath::{num_traits::AsPrimitive, vec2, BaseFloat, Matrix4, One, Vector2};
+use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, Vector2};
 use wgpu::SurfaceConfiguration;
 
 pub mod euclidian;
 pub mod hyperbolic;
 
-pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> + One {
+pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> + One + AbsDiffEq {
     fn translation(amt: f64, angle: f64) -> Self;
     fn rotation(angle: f64) -> Self;
     fn reverse(&self) -> Self;
@@ -30,7 +30,7 @@ pub struct ViewState<SpinorT: Spinor> {
 
 impl<SpinorT: Spinor> ViewState<SpinorT> {
     pub fn new() -> Self {
-        let scale = 0.1;
+        let scale = 0.5;
 
         Self {
             scale,
@@ -74,6 +74,10 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
 
     pub fn translate(&mut self, amt: f64, angle: f64) {
         self.camera = self.camera * SpinorT::translation(amt, angle);
+    }
+
+    pub fn rotate(&mut self, angle: f64) {
+        self.camera = self.camera * SpinorT::rotation(angle);
     }
 
     pub fn get_camera_mat(&self) -> Matrix4<f32> {

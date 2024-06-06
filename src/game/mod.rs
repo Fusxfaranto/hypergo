@@ -1,6 +1,6 @@
 use std::{f64::consts::PI, ptr};
 
-use cgmath::{abs_diff_eq, MetricSpace, Vector2, Zero};
+use cgmath::{abs_diff_eq, relative_eq, MetricSpace, Vector2, Zero};
 
 pub mod render;
 use render::*;
@@ -41,10 +41,13 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             neighbor_directions: neighbor_directions.clone(),
         };
 
+        let mut test_count = 1;
+
+        /*
+
         let mut cur_transform = SpinorT::one();
         board.add_point(cur_transform);
 
-        let mut test_count = 1;
         for ring in 1..(edge_len / 2 + 1) {
             for dir in neighbor_directions.iter() {
                 for i in 0..(2 * ring) {
@@ -60,6 +63,39 @@ impl<SpinorT: Spinor> Board<SpinorT> {
                     }
                 }
             }
+        } */
+
+        let mut chebyshev_dirs = neighbor_directions.clone();
+        for dir1 in neighbor_directions.iter() {
+            for dir2 in neighbor_directions.iter() {
+                if ptr::eq(dir1, dir2) {
+                    continue;
+                }
+                let d = *dir1 * *dir2;
+                if abs_diff_eq!(d, SpinorT::one()) {
+                    continue;
+                }
+                chebyshev_dirs.push(d);
+            }
+        }
+
+        board.add_point(SpinorT::one());
+        let mut start_i = 0;
+        for _ring in 1..(edge_len / 2 + 1) {
+            let l = board.points.len();
+            for i in start_i..l {
+                for dir in chebyshev_dirs.iter() {
+                    let t = board.points[i].transform * *dir;
+                    if board.find_point(t.apply(Vector2::zero()), 1e-3) == -1 {
+                        board.add_point(t);
+                        test_count += 1;
+                        if test_count >= 6 {
+                            return board;
+                        }
+                    }
+                }
+            }
+            start_i = l;
         }
 
         board
@@ -113,7 +149,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
         // TODO select between multiple
         let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
-        let board = Board::make_board(neighbor_directions, 5);
+        let board = Board::make_board(neighbor_directions, 3);
         Self {
             board,
             turn: Turn::Black,
@@ -212,7 +248,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 _ => false,
             }
         } else {
-            println!("no point found");
+            println!("no point found at {:?}", pos);
             false
         }
     }

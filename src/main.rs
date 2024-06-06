@@ -80,7 +80,7 @@ const STONE_VERTS: &[Vertex] = &[
 
 const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7];
 
-const LINK_WIDTH: f32 = 0.1;
+const LINK_WIDTH: f32 = 0.01;
 const LINK_VERTS: &[Vertex] = &[
     Vertex {
         position: [-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
@@ -103,6 +103,8 @@ struct InputState {
     left: bool,
     right: bool,
     back: bool,
+    cw: bool,
+    ccw: bool,
 }
 
 impl InputState {
@@ -112,6 +114,8 @@ impl InputState {
             left: false,
             right: false,
             back: false,
+            cw: false,
+            ccw: false,
         }
     }
 
@@ -142,6 +146,14 @@ impl InputState {
                     }
                     KeyCode::KeyD | KeyCode::ArrowRight => {
                         self.right = is_pressed;
+                        true
+                    }
+                    KeyCode::KeyE => {
+                        self.cw = is_pressed;
+                        true
+                    }
+                    KeyCode::KeyQ => {
+                        self.ccw = is_pressed;
                         true
                     }
                     _ => false,
@@ -455,14 +467,20 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     fn update(&mut self) {
         const SPEED: f64 = 0.1;
         if self.input_state.back {
-            self.view_state.translate(SPEED, 3.0 * PI / 2.0);
+            self.view_state.translate(SPEED, PI);
         } else if self.input_state.forward {
-            self.view_state.translate(SPEED, PI / 2.0);
+            self.view_state.translate(SPEED, 0.0);
         }
         if self.input_state.left {
-            self.view_state.translate(SPEED, PI);
+            self.view_state.translate(SPEED, PI / 2.0);
         } else if self.input_state.right {
-            self.view_state.translate(SPEED, 0.0);
+            self.view_state.translate(SPEED, 3.0 * PI / 2.0);
+        }
+        const ANGULAR_SPEED: f64 = 0.05;
+        if self.input_state.cw {
+            self.view_state.rotate(ANGULAR_SPEED);
+        } else if self.input_state.ccw {
+            self.view_state.rotate(-ANGULAR_SPEED);
         }
         self.uniform.transform = self.view_state.get_camera_mat().into();
         self.queue.write_buffer(
@@ -557,8 +575,11 @@ pub async fn run() {
         .build(&event_loop)
         .unwrap();
 
+    #[cfg(feature = "euclidian_geometry")]
     use SpinorEuclidian as SpinorT;
-    //use SpinorHyperbolic as SpinorT;
+    #[cfg(not(feature = "euclidian_geometry"))]
+    use SpinorHyperbolic as SpinorT;
+
     let mut state = State::<SpinorT>::new(&window).await;
     let mut surface_configured = false;
 

@@ -1,10 +1,10 @@
 use std::{f64::consts::PI, ops};
 
-use cgmath::{assert_abs_diff_eq, vec2, vec4, Matrix, Matrix4, Vector2};
+use cgmath::{assert_abs_diff_eq, assert_relative_eq, vec2, vec4, Matrix, Matrix4, Vector2};
 
 use super::*;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SpinorEuclidian {
     s: f64,
     xy: f64,
@@ -17,7 +17,7 @@ impl Spinor for SpinorEuclidian {
         // TODO faster implementation
         let m = self.into_mat4();
         let v_out = m * vec4(v.x, v.y, 0.0, 1.0);
-        assert_abs_diff_eq!(v_out.w, 1.0);
+        assert_abs_diff_eq!(v_out.w, 1.0, epsilon = 1e-6);
         return vec2(v_out.x, v_out.y);
     }
 
@@ -64,8 +64,8 @@ impl Spinor for SpinorEuclidian {
         Self {
             s: 1.0,
             xy: 0.0,
-            yw: angle.sin() * b2,
-            wx: -angle.cos() * b2,
+            yw: angle.cos() * b2,
+            wx: angle.sin() * b2,
         }
     }
 
@@ -115,5 +115,20 @@ impl ops::Mul<SpinorEuclidian> for SpinorEuclidian {
             yw: rhs.yw * self.s + rhs.wx * self.xy + rhs.s * self.yw - rhs.xy * self.wx,
             wx: rhs.wx * self.s - rhs.yw * self.xy + rhs.xy * self.yw + rhs.s * self.wx,
         }
+    }
+}
+
+impl AbsDiffEq for SpinorEuclidian {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-9
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        f64::abs_diff_eq(&self.s, &other.s, epsilon)
+            && f64::abs_diff_eq(&self.xy, &other.xy, epsilon)
+            && f64::abs_diff_eq(&self.yw, &other.yw, epsilon)
+            && f64::abs_diff_eq(&self.wx, &other.wx, epsilon)
     }
 }

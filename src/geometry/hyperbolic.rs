@@ -1,12 +1,13 @@
 use std::{f64::consts::PI, ops};
 
 use cgmath::{
-    assert_abs_diff_eq, num_traits::Pow, vec2, vec4, BaseFloat, Matrix, Matrix4, Vector2,
+    assert_abs_diff_eq, num_traits::Pow, vec2, vec3, vec4, BaseFloat, InnerSpace, Matrix, Matrix4,
+    Vector2, Vector3,
 };
 
 use super::*;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SpinorHyperbolic {
     s: f64,
     xy: f64,
@@ -98,18 +99,27 @@ impl Spinor for SpinorHyperbolic {
         }
     }
 
+    // TODO may be better to just switch to hyperboloid coords everywhere
     fn distance(a: Vector2<f64>, b: Vector2<f64>) -> f64 {
-        // TODO wrong?
-        (1.0 - (a.x - b.x).powi(2) - (a.y - b.y).powi(2)).acosh()
+        fn to_hyperboloid(v: Vector2<f64>) -> Vector3<f64> {
+            let w = (1.0 / (1.0 - v.x * v.x - v.y * v.y)).sqrt();
+            vec3(v.x * w, v.y * w, w)
+        }
+        let a_h = to_hyperboloid(a);
+        let b_h = to_hyperboloid(b);
+        //println!("a {:?} {:?}, b {:?} {:?}", a, a_h, b, b_h);
+        let d = (a_h.z * b_h.z - a_h.x * b_h.x - a_h.y * b_h.y).acosh();
+        //println!("d {d}");
+        d
     }
 
     fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
-        // TODO
+        let d_5_4 = 1.061275061905036;
         vec![vec![
-            Self::translation(1.0, 0.0),
-            Self::translation(1.0, PI / 2.0),
-            Self::translation(1.0, PI),
-            Self::translation(1.0, 3.0 * PI / 2.0),
+            Self::translation(d_5_4, 0.0),
+            Self::translation(d_5_4, PI / 2.0),
+            Self::translation(d_5_4, PI),
+            Self::translation(d_5_4, 3.0 * PI / 2.0),
         ]]
     }
 }
@@ -136,5 +146,20 @@ impl ops::Mul<SpinorHyperbolic> for SpinorHyperbolic {
             yw: self.s * rhs.yw + self.yw * rhs.s - self.wx * rhs.xy + self.xy * rhs.wx,
             wx: self.s * rhs.wx + self.wx * rhs.s - self.xy * rhs.yw + self.yw * rhs.xy,
         }
+    }
+}
+
+impl AbsDiffEq for SpinorHyperbolic {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-9
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        f64::abs_diff_eq(&self.s, &other.s, epsilon)
+            && f64::abs_diff_eq(&self.xy, &other.xy, epsilon)
+            && f64::abs_diff_eq(&self.yw, &other.yw, epsilon)
+            && f64::abs_diff_eq(&self.wx, &other.wx, epsilon)
     }
 }
