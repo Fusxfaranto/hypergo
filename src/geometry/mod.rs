@@ -40,18 +40,17 @@ pub trait Spinor: Copy + Clone + ops::Mul<Output = Self> + One + AbsDiffEq {
 }
 
 pub struct ViewState<SpinorT: Spinor> {
-    // TODO can we scale with unnormalized spinor instead of keeping separate scale?
-    scale: f64,
+    // scale for euclidian, poincare factor for hyperbolic
+    pub projection_factor: f64,
     camera: SpinorT,
     pending_camera: SpinorT,
 }
 
+// TODO lots of cfg! here, break some of it out into trait impls?
 impl<SpinorT: Spinor> ViewState<SpinorT> {
     pub fn new() -> Self {
-        let scale = 0.8;
-
         Self {
-            scale,
+            projection_factor: 1.0,
             camera: SpinorT::one(),
             pending_camera: SpinorT::one(),
         }
@@ -63,36 +62,34 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         x: f64,
         y: f64,
     ) -> SpinorT::Point {
-        let scaled = (1.0 / self.scale)
-            * vec2(
-                2.0 * x / config.width as f64 - 1.0,
-                -2.0 * y / config.height as f64 + 1.0,
-            );
-
-        // TODO hack
-        #[cfg(feature = "euclidian_geometry")]
-        fn limit(v: Vector2<f64>) -> Vector2<f64> {
-            v
-        }
-
-        #[cfg(not(feature = "euclidian_geometry"))]
-        fn limit(v: Vector2<f64>) -> Vector2<f64> {
+        let v = vec2(
+            2.0 * x / config.width as f64 - 1.0,
+            -2.0 * y / config.height as f64 + 1.0,
+        );
+        let adjusted = if cfg!(feature = "euclidian_geometry") {
+            (1.0 / self.projection_factor) * v
+        } else {
             const LIMIT: f64 = 0.99;
-            let mag = v.magnitude2();
-            //println!("{mag2}");
-            if mag < LIMIT {
+            let mag2 = v.magnitude2();
+            let limited = if mag2 < LIMIT {
                 v
             } else {
-                v * (LIMIT / mag).sqrt()
-            }
-        }
+                v * (LIMIT / mag2).sqrt()
+            };
+            let base = (0.5 * (1.0 + mag2.min(LIMIT))) * self.projection_factor + 1.0
+                - self.projection_factor;
+            limited / base
+        };
 
-        self.camera
-            .apply(SpinorT::Point::from_flat_vec(limit(scaled)))
+        self.camera.apply(SpinorT::Point::from_flat_vec(adjusted))
     }
 
-    pub fn adjust_scale(&mut self, amt: f64) {
-        self.scale *= amt + 1.0;
+    pub fn adjust_projection_factor(&mut self, amt: f64) {
+        if cfg!(feature = "euclidian_geometry") {
+            self.projection_factor *= amt + 1.0;
+        } else {
+            self.projection_factor = (self.projection_factor + amt).clamp(0.0, 1.0);
+        }
     }
 
     pub fn translate(&mut self, amt: f64, angle: f64) {
@@ -121,7 +118,9 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
 
     pub fn get_camera_mat(&self) -> Matrix4<f32> {
         let mut scale_mat = Matrix4::<f32>::one();
-        scale_mat.w.w = 1.0 / self.scale as f32;
+        if cfg!(feature = "euclidian_geometry") {
+            scale_mat.w.w = 1.0 / self.projection_factor as f32;
+        }
 
         scale_mat * (self.pending_camera * self.camera).reverse().into_mat4()
     }

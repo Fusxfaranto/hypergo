@@ -36,6 +36,22 @@ impl RenderTargetVertex {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct OuterUniform {
+    f: f32,
+    skip_reprojection: u32,
+}
+
+impl OuterUniform {
+    fn new() -> Self {
+        Self {
+            f: 1.0,
+            skip_reprojection: cfg!(feature = "euclidian_geometry") as u32,
+        }
+    }
+}
+
 const RENDER_TARGET_VERTS: &[RenderTargetVertex] = &[
     RenderTargetVertex {
         position: [-1.0, -1.0],
@@ -118,7 +134,7 @@ const STONE_VERTS: &[Vertex] = &[
 
 const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7];
 
-const LINK_WIDTH: f32 = 0.01;
+const LINK_WIDTH: f32 = 0.025;
 const LINK_VERTS: &[Vertex] = &[
     Vertex {
         position: [-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
@@ -210,6 +226,9 @@ struct State<'a, SpinorT: Spinor> {
     size: winit::dpi::PhysicalSize<u32>,
 
     outer_render_pipeline: wgpu::RenderPipeline,
+    outer_uniform: OuterUniform,
+    outer_uniform_buffer: wgpu::Buffer,
+    outer_uniform_bind_group: wgpu::BindGroup,
 
     render_target_vertex_buffer: wgpu::Buffer,
     render_target_pipeline: wgpu::RenderPipeline,
@@ -330,8 +349,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("render_target_tex"),
             // TODO pick a resolution more smartly
             size: wgpu::Extent3d {
-                width: 2048,
-                height: 2048,
+                width: 8 * 1024,
+                height: 8 * 1024,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -398,7 +417,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -443,10 +462,41 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("outer_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/outer_shader.wgsl").into()),
         });
+        let outer_uniform = OuterUniform::new();
+        let outer_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("outer_uniform_buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let outer_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("outer_uniform_bind_group_layout"),
+            });
+        let outer_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &outer_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: outer_uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("outer_uniform_bind_group"),
+        });
         let outer_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("outer_render_pipeline_layout"),
-                bind_group_layouts: &[&render_target_tex_bind_group_layout],
+                bind_group_layouts: &[
+                    &render_target_tex_bind_group_layout,
+                    &outer_uniform_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
         let outer_render_pipeline =
@@ -539,6 +589,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             config,
             size,
             outer_render_pipeline,
+            outer_uniform,
+            outer_uniform_buffer,
+            outer_uniform_bind_group,
             render_target_vertex_buffer,
             render_target_pipeline,
             render_target_tex,
@@ -599,7 +652,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => *scroll,
                 };
                 const SCROLL_FACTOR: f64 = 0.001;
-                self.view_state.adjust_scale(scroll_amt * SCROLL_FACTOR);
+                self.view_state
+                    .adjust_projection_factor(scroll_amt * SCROLL_FACTOR);
                 true
             }
             // TODO doesn't quite work when camera moves without cursor moving
@@ -683,6 +737,14 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             );
             self.game_state.needs_render = false;
         }
+
+        // TODO don't need to be updating this every frame
+        self.outer_uniform.f = self.view_state.projection_factor as f32;
+        self.queue.write_buffer(
+            &self.outer_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.outer_uniform]),
+        )
     }
 
     fn render_to_render_target(&mut self, encoder: &mut wgpu::CommandEncoder) {
@@ -750,6 +812,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
 
         render_pass.set_pipeline(&self.outer_render_pipeline);
         render_pass.set_bind_group(0, &self.render_target_tex_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.outer_uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.render_target_vertex_buffer.slice(..));
         render_pass.draw(0..RENDER_TARGET_VERTS.len() as _, 0..1);
     }
