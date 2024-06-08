@@ -289,7 +289,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    required_features: wgpu::Features::empty(),
+                    // TODO presumably this can be made optional?
+                    required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                     required_limits: wgpu::Limits::default(),
                 },
                 None,
@@ -345,22 +346,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("uniform_bind_group"),
         });
 
-        let render_target_tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("render_target_tex"),
-            // TODO pick a resolution more smartly
-            size: wgpu::Extent3d {
-                width: 8 * 1024,
-                height: 8 * 1024,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: surface_format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-
+        const MULTISAMPLE_COUNT: u32 = 16;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
@@ -378,11 +364,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
+                    compilation_options: Default::default(),
                     buffers: &[Vertex::desc(), Instance::desc()],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
+                    compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: Some(wgpu::BlendState {
@@ -403,24 +391,50 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState {
-                    count: 1,
+                    count: MULTISAMPLE_COUNT,
                     mask: !0,
                     alpha_to_coverage_enabled: false,
                 },
                 multiview: None,
             });
-
+        let render_target_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("render_target_tex"),
+            // TODO pick a resolution more smartly
+            size: wgpu::Extent3d {
+                width: 1 << 12,
+                height: 1 << 12,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: MULTISAMPLE_COUNT,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
         let render_target_tex_view =
             render_target_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        // TODO remove?
         let render_target_tex_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
+        // maybe some day try this again, but seems like i'd have to fork this to get it
+        // to work with this rendering pipeline
+        /*
+        let render_target_smaa_target = smaa::SmaaTarget::new(
+            &device,
+            &queue,
+            render_target_tex.width(),
+            render_target_tex.height(),
+            surface_format,
+            smaa::SmaaMode::Smaa1X,
+        ); */
         let render_target_tex_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -428,9 +442,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            multisampled: false,
+                            multisampled: true,
                             view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         },
                         count: None,
                     },
@@ -506,11 +520,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 vertex: wgpu::VertexState {
                     module: &outer_shader,
                     entry_point: "vs_main",
+                    compilation_options: Default::default(),
                     buffers: &[RenderTargetVertex::desc()],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &outer_shader,
                     entry_point: "fs_main",
+                    compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: Some(wgpu::BlendState {
@@ -530,7 +546,6 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     conservative: false,
                 },
                 depth_stencil: None,
-                // TODO multisampling??
                 multisample: wgpu::MultisampleState {
                     count: 1,
                     mask: !0,
@@ -747,7 +762,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         )
     }
 
-    fn render_to_render_target(&mut self, encoder: &mut wgpu::CommandEncoder) {
+    fn render_to_render_target(&self, encoder: &mut wgpu::CommandEncoder) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render_target_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -789,7 +804,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         );
     }
 
-    fn render_transformed(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+    fn render_transformed(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -829,13 +844,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("render_target_encoder"),
                 });
-
         self.render_to_render_target(&mut render_target_encoder);
         let mut commands = vec![render_target_encoder.finish()];
-
-        // TODO ???
-        self.queue.submit(commands);
-        let mut commands = vec![];
 
         let mut encoder = self
             .device
