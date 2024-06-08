@@ -1,6 +1,7 @@
-use std::{f64::consts::PI, iter, mem};
+use std::{f64::consts::PI, iter, mem, time};
 
 use cgmath::{abs_diff_ne, vec2, vec4, Matrix4, One, SquareMatrix, Vector2, Zero};
+use circular_buffer::CircularBuffer;
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
@@ -290,7 +291,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     // TODO presumably this can be made optional?
-                    required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                    //required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                    required_features: wgpu::Features::default(),
                     required_limits: wgpu::Limits::default(),
                 },
                 None,
@@ -346,7 +348,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("uniform_bind_group"),
         });
 
-        const MULTISAMPLE_COUNT: u32 = 16;
+        const MULTISAMPLE_COUNT: u32 = 4;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
@@ -401,8 +403,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("render_target_tex"),
             // TODO pick a resolution more smartly
             size: wgpu::Extent3d {
-                width: 1 << 12,
-                height: 1 << 12,
+                width: 1 << 13,
+                height: 1 << 13,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -882,6 +884,10 @@ pub async fn run() {
     let mut state = State::<SpinorT>::new(&window).await;
     let mut surface_configured = false;
 
+    let mut frame_count = 0;
+    let mut last_frame_time = time::Instant::now();
+    let mut fps_ring = CircularBuffer::<4, f64>::new();
+
     event_loop
         .run(move |event, control_flow| match event {
             /*             Event::DeviceEvent {
@@ -929,6 +935,25 @@ pub async fn run() {
                                 Err(wgpu::SurfaceError::Timeout) => {
                                     log::warn!("Surface timeout")
                                 }
+                            }
+                            frame_count += 1;
+                            const FPS_FAC: i32 = 10;
+                            if frame_count % FPS_FAC == 0 {
+                                fps_ring.push_back(
+                                    (FPS_FAC as f64)
+                                        / (time::Instant::now() - last_frame_time).as_secs_f64(),
+                                );
+
+                                last_frame_time = time::Instant::now();
+                            }
+
+                            if frame_count % 60 == 0 {
+                                let mut avg_fps = 0.0;
+                                for &fps in fps_ring.iter() {
+                                    avg_fps += fps;
+                                }
+                                avg_fps /= fps_ring.len() as f64;
+                                println!("fps: {avg_fps}");
                             }
                         }
                         _ => {}
