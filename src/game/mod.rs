@@ -153,7 +153,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
         // TODO select between multiple
         let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
-        let board = Board::make_board(neighbor_directions, 11);
+        let board = Board::make_board(neighbor_directions, 9);
         Self {
             board,
             turn: Turn::Black,

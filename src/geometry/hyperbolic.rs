@@ -52,6 +52,11 @@ impl Point for PointHyperbolic {
         }
     }
 
+    fn from_projective(x: f64, y: f64, w: f64) -> Self {
+        assert_abs_diff_eq!(w * w, 1.0 + x * x + y * y, epsilon = 1e-9);
+        Self { x, y, w }
+    }
+
     fn angle(&self) -> f64 {
         self.y.atan2(self.x)
     }
@@ -78,7 +83,7 @@ impl AbsDiffEq for PointHyperbolic {
 impl ops::Mul<f64> for PointHyperbolic {
     type Output = PointHyperbolic;
 
-    // think this is right but not completely sure?
+    // TODO pretty sure this is wrong
     fn mul(self, rhs: f64) -> Self {
         Self {
             x: rhs * self.x,
@@ -117,6 +122,10 @@ impl Spinor for SpinorHyperbolic {
             yw: -self.yw,
             wx: -self.wx,
         }
+    }
+
+    fn magnitude2(&self) -> f64 {
+        self.s * self.s + self.xy * self.xy - self.yw * self.yw - self.wx * self.wx
     }
 
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
@@ -241,6 +250,18 @@ impl ops::Mul<SpinorHyperbolic> for SpinorHyperbolic {
             xy: self.s * rhs.xy + self.xy * rhs.s + self.yw * rhs.wx - self.wx * rhs.yw,
             yw: self.s * rhs.yw + self.yw * rhs.s - self.wx * rhs.xy + self.xy * rhs.wx,
             wx: self.s * rhs.wx + self.wx * rhs.s - self.xy * rhs.yw + self.yw * rhs.xy,
+        }
+    }
+}
+impl ops::Mul<f64> for SpinorHyperbolic {
+    type Output = SpinorHyperbolic;
+
+    fn mul(self, rhs: f64) -> SpinorHyperbolic {
+        SpinorHyperbolic {
+            s: rhs * self.s,
+            xy: rhs * self.xy,
+            yw: rhs * self.yw,
+            wx: rhs * self.wx,
         }
     }
 }

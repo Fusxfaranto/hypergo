@@ -258,7 +258,7 @@ struct State<'a, SpinorT: Spinor> {
     cursor_pos: SpinorT::Point,
     view_state: ViewState<SpinorT>,
     game_state: GameState<SpinorT>,
-    drag_start: Option<SpinorT::Point>,
+    drag_from: Option<SpinorT::Point>,
     last_drag_pos: SpinorT::Point,
 }
 
@@ -631,7 +631,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             cursor_pos: SpinorT::Point::zero(),
             view_state,
             game_state,
-            drag_start: None,
+            drag_from: None,
             last_drag_pos: SpinorT::Point::zero(),
         }
     }
@@ -699,13 +699,24 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             } => {
                 match *state {
                     ElementState::Pressed => {
-                        self.drag_start = Some(self.cursor_pos);
+                        self.drag_from = Some(self.cursor_pos);
                     }
                     ElementState::Released => {
-                        self.view_state.apply_drag();
-                        self.drag_start = None;
+                        self.drag_from = None;
                     }
                 }
+                true
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::KeyR),
+                        ..
+                    },
+                ..
+            } => {
+                self.view_state.reset_camera();
                 true
             }
             _ => false,
@@ -731,9 +742,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             self.view_state.rotate(-ANGULAR_SPEED);
         }
 
-        if let Some(pos) = self.drag_start {
+        if let Some(pos) = self.drag_from {
             if self.last_drag_pos != self.cursor_pos {
-                self.view_state.set_drag(pos, self.cursor_pos);
+                self.view_state.drag(pos, self.cursor_pos);
                 self.last_drag_pos = self.cursor_pos;
             }
         }
@@ -873,6 +884,7 @@ pub async fn run() {
             width: 1024,
             height: 1024,
         })
+        .with_title("hypergo")
         .build(&event_loop)
         .unwrap();
 
@@ -953,7 +965,8 @@ pub async fn run() {
                                     avg_fps += fps;
                                 }
                                 avg_fps /= fps_ring.len() as f64;
-                                println!("fps: {avg_fps}");
+                                // TODO text rendering
+                                //println!("fps: {avg_fps}");
                             }
                         }
                         _ => {}

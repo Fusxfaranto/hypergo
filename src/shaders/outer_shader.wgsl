@@ -36,7 +36,12 @@ fn world_coords_mag2(v: vec2f, dims: vec2f) -> f32 {
 @fragment
 fn fs_main(in: RenderTargetVertexOutput) -> @location(0) vec4f {
     let mag2 = dot(in.coords, in.coords);
-    if (mag2 >= 1.0 && !bool(uniform_params.skip_reprojection)) {
+    let mag2_thresh = select(
+        1.0,
+        3.0e38,
+        bool(uniform_params.skip_reprojection),
+    );
+    if (mag2 >= mag2_thresh) {
         discard;
     }
 
@@ -51,6 +56,7 @@ fn fs_main(in: RenderTargetVertexOutput) -> @location(0) vec4f {
     let pixelcoords = texcoords * dims + vec2f(-0.5, -0.5);
     // TODO biased to one side?
     let pixelcoords_low = floor(pixelcoords);
+    // TODO is this upper bound necessary?
     let pixelcoords_high = min(pixelcoords_low + vec2f(1.0), dims - vec2f(1.0));
     let pixelcoords_lowhigh = vec2f(pixelcoords_low.x, pixelcoords_high.y);
     let pixelcoords_highlow = vec2f(pixelcoords_high.x, pixelcoords_low.y);
@@ -67,11 +73,13 @@ fn fs_main(in: RenderTargetVertexOutput) -> @location(0) vec4f {
     let ucoords_highlow = vec2u(pixelcoords_highlow);
     let ucoords_high = vec2u(pixelcoords_high);
 
-    let w_low = (1 - pixelcoords_frac.x) * (1 - pixelcoords_frac.y) * f32(mag2_low < 1.0);
-    let w_lowhigh = (1 - pixelcoords_frac.x) * pixelcoords_frac.y * f32(mag2_lowhigh < 1.0);
-    let w_highlow = pixelcoords_frac.x * (1 - pixelcoords_frac.y) * f32(mag2_highlow < 1.0);
-    let w_high = pixelcoords_frac.x * pixelcoords_frac.y * f32(mag2_high < 1.0);
+    let w_low = (1 - pixelcoords_frac.x) * (1 - pixelcoords_frac.y) * f32(mag2_low < mag2_thresh);
+    let w_lowhigh = (1 - pixelcoords_frac.x) * pixelcoords_frac.y * f32(mag2_lowhigh < mag2_thresh);
+    let w_highlow = pixelcoords_frac.x * (1 - pixelcoords_frac.y) * f32(mag2_highlow < mag2_thresh);
+    let w_high = pixelcoords_frac.x * pixelcoords_frac.y * f32(mag2_high < mag2_thresh);
 
+    // TODO weighting subsamples based on their location would be nice, but what's the pattern?
+    // https://mynameismjp.wordpress.com/2010/07/07/msaa-sample-pattern-detector/
     var tex_out = vec4f(0);
     let sample_count = i32(textureNumSamples(render_target_tex));
     for (var i: i32 = 0; i < sample_count; i += 1) {

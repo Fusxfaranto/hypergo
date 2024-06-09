@@ -24,6 +24,10 @@ impl Point for PointEuclidian {
         Self { x, y }
     }
 
+    fn from_projective(x: f64, y: f64, w: f64) -> Self {
+        Self { x: x / w, y: y / w }
+    }
+
     fn angle(&self) -> f64 {
         self.y.atan2(self.x)
     }
@@ -85,6 +89,10 @@ impl Spinor for SpinorEuclidian {
             yw: -self.yw,
             wx: -self.wx,
         }
+    }
+
+    fn magnitude2(&self) -> f64 {
+        self.s * self.s + self.xy * self.xy
     }
 
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
@@ -174,6 +182,18 @@ impl ops::Mul<SpinorEuclidian> for SpinorEuclidian {
             xy: rhs.xy * self.s + rhs.s * self.xy,
             yw: rhs.yw * self.s + rhs.wx * self.xy + rhs.s * self.yw - rhs.xy * self.wx,
             wx: rhs.wx * self.s - rhs.yw * self.xy + rhs.xy * self.yw + rhs.s * self.wx,
+        }
+    }
+}
+impl ops::Mul<f64> for SpinorEuclidian {
+    type Output = SpinorEuclidian;
+
+    fn mul(self, rhs: f64) -> SpinorEuclidian {
+        SpinorEuclidian {
+            s: rhs * self.s,
+            xy: rhs * self.xy,
+            yw: rhs * self.yw,
+            wx: rhs * self.wx,
         }
     }
 }
