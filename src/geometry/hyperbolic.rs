@@ -221,10 +221,7 @@ impl Spinor for SpinorHyperbolic {
             wx: 0.0,
         }
     }
-
-    // TODO it's possible to generate these automatically by solving this eq
-    // sin(1/2*theta)=cos(pi/n)/cosh(1/2*d)
-    // newton's method is easy enough to implement and should work
+    /*
     fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
         let mut res = vec![];
         let d_3_7 = 1.0905496635070862;
@@ -259,6 +256,10 @@ impl Spinor for SpinorHyperbolic {
             Self::translation(d_5_4, 3.0 * PI / 2.0),
         ]);
         res
+    } */
+
+    fn tiling_get_distance(sides: u32, angle: f64) -> f64 {
+        2.0 * ((PI / (sides as f64)).cos() / (0.5 * angle).sin()).acosh()
     }
 }
 

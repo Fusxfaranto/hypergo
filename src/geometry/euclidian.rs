@@ -155,13 +155,13 @@ impl Spinor for SpinorEuclidian {
         }
     }
 
-    fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
-        vec![vec![
-            Self::translation(1.0, 0.0),
-            Self::translation(1.0, PI / 2.0),
-            Self::translation(1.0, PI),
-            Self::translation(1.0, 3.0 * PI / 2.0),
-        ]]
+    fn tiling_get_distance(sides: u32, angle: f64) -> f64 {
+        assert_abs_diff_eq!(
+            (PI / (sides as f64)).cos() / (0.5 * angle).sin(),
+            1.0,
+            epsilon = 1e-11
+        );
+        1.0
     }
 }
 

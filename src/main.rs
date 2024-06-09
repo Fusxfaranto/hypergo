@@ -729,7 +729,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 self.view_state.reset_camera();
                 true
             }
-            WindowEvent::KeyboardInput {
+            /*             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
                         state: ElementState::Pressed,
@@ -745,7 +745,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     -0.7651210339710757,
                 );
                 true
-            }
+            } */
             _ => false,
         }
     }

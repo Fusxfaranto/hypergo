@@ -48,85 +48,35 @@ struct BoardPoint<SpinorT: Spinor> {
 struct Board<SpinorT: Spinor> {
     points: Vec<BoardPoint<SpinorT>>,
     links: Vec<(i32, i32)>,
+    tiling_parameters: TilingParameters,
     //neighbor_directions: Vec<SpinorT>,
-
-    // TODO a little janky to shove this here
-    link_len: f32,
 }
 
 impl<SpinorT: Spinor> Board<SpinorT> {
-    fn make_board(neighbor_directions: Vec<SpinorT>, edge_len: usize) -> Self {
+    fn make_board(tiling_parameters: TilingParameters, edge_len: usize) -> Self {
         // TODO support even size probably?
         assert!(edge_len % 2 == 1);
 
-        let link_len = neighbor_directions[0]
-            .apply(SpinorT::Point::zero())
-            .flat_magnitude() as f32;
+        let neighbor_directions: Vec<SpinorT> = (0..tiling_parameters.around_vertex)
+            .map(|i| {
+                SpinorT::translation(
+                    tiling_parameters.distance,
+                    i as f64 * tiling_parameters.angle,
+                )
+            })
+            .collect();
 
         let mut board = Self {
             points: Vec::new(),
             links: Vec::new(),
+            tiling_parameters,
             //neighbor_directions: neighbor_directions.clone(),
-            link_len,
         };
 
         let mut test_count = 1;
 
         let reverse_neighbor_directions: Vec<SpinorT> =
             neighbor_directions.iter().map(|d| d.reverse()).collect();
-        /*
-        let mut chebyshev_dirs = neighbor_directions.clone();
-        let mut reverse_chebyshev_dirs = reverse_neighbor_directions.clone();
-        for dir1 in neighbor_directions.iter() {
-            for dir2 in neighbor_directions.iter() {
-                if ptr::eq(dir1, dir2) {
-                    continue;
-                }
-                let d = *dir1 * *dir2;
-                if abs_diff_eq!(d, SpinorT::one()) {
-                    continue;
-                }
-                chebyshev_dirs.push(d);
-                reverse_chebyshev_dirs.push(d.reverse());
-            }
-        }
-
-        board.add_point(
-            &neighbor_directions,
-            &reverse_neighbor_directions,
-            SpinorT::one(),
-        );
-        let mut start_i = 0;
-        for ring in 1..(edge_len / 2 + 1) {
-            let l = board.points.len();
-            for i in start_i..l {
-                let iter = if ring % 2 == 1 {
-                    println!("normal");
-                    chebyshev_dirs.iter()
-                } else {
-                    println!("reverse");
-                    reverse_chebyshev_dirs.iter()
-                };
-                for dir in iter {
-                    let t = *dir * board.points[i].transform;
-                    if board.find_point(t.apply(SpinorT::Point::zero()), 1e-3) == -1 {
-                        board.add_point(&neighbor_directions, &reverse_neighbor_directions, t);
-                        test_count += 1;
-                        if test_count >= 8 {
-                            return board;
-                        }
-                    }
-                }
-            }
-            start_i = l;
-        } */
-        /*
-        println!("{:?}", neighbor_directions[0]);
-        println!(
-            "{:?}",
-            neighbor_directions[0] * neighbor_directions[1].reverse()
-        );
-        todo!(); */
 
         board.add_point(
             &neighbor_directions,
@@ -238,9 +188,11 @@ pub struct GameState<SpinorT: Spinor> {
 
 impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
-        // TODO select between multiple
-        let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
-        let board = Board::make_board(neighbor_directions, 11);
+        let board = if cfg!(feature = "euclidian_geometry") {
+            Board::make_board(TilingParameters::new::<SpinorT>(6, 3), 15)
+        } else {
+            Board::make_board(TilingParameters::new::<SpinorT>(10, 4), 7)
+        };
         Self {
             board,
             turn: Turn::Black,

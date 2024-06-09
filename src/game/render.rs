@@ -26,7 +26,11 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
         // TODO need to squeeze into some sort of trapezoid
-        let stretch_mat = Matrix4::from_nonuniform_scale(self.board.link_len, 1.0, 1.0);
+        let stretch_mat = Matrix4::from_nonuniform_scale(
+            self.board.tiling_parameters.link_len() as f32,
+            1.0,
+            1.0,
+        );
         for (idx1, idx2) in self.board.links.iter() {
             let tf1 = self.board.points[*idx1 as usize].transform;
             let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
@@ -43,13 +47,13 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     // incremental updates would be nice, eventually
     pub fn make_stone_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
+
+        let scale_mat = Matrix4::from_scale(self.board.tiling_parameters.distance as f32 * 0.9);
+
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
                 //continue;
             }
-
-            // TODO
-            let scale_mat = Matrix4::from_scale(0.5);
 
             instances.push(Instance {
                 transform: (point.transform.into_mat4() * scale_mat).into(),

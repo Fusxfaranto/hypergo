@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::ops;
 
@@ -42,7 +43,8 @@ pub trait Spinor:
         f32: AsPrimitive<S>,
         f64: AsPrimitive<S>;
 
-    fn tiling_neighbor_directions() -> Vec<Vec<Self>>;
+    // TODO doesn't really fit here
+    fn tiling_get_distance(sides: u32, angle: f64) -> f64;
 
     fn magnitude(&self) -> f64 {
         self.magnitude2().sqrt()
@@ -50,6 +52,32 @@ pub trait Spinor:
     // TODO implement MulAssign?
     fn normalize(&mut self) {
         *self = *self * (1.0 / self.magnitude());
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct TilingParameters {
+    pub sides: u32,
+    pub around_vertex: u32,
+    pub angle: f64,
+    pub distance: f64,
+}
+
+impl TilingParameters {
+    pub fn new<SpinorT: Spinor>(sides: u32, around_vertex: u32) -> TilingParameters {
+        let angle = 2.0 * PI / (around_vertex as f64);
+        let distance = SpinorT::tiling_get_distance(sides, angle);
+        Self {
+            sides,
+            around_vertex,
+            angle,
+            distance,
+        }
+    }
+
+    // klein distance, from center
+    pub fn link_len(&self) -> f64 {
+        self.distance.sinh() / self.distance.cosh()
     }
 }
 
