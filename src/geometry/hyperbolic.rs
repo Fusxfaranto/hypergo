@@ -104,6 +104,10 @@ pub struct SpinorHyperbolic {
 impl Spinor for SpinorHyperbolic {
     type Point = PointHyperbolic;
 
+    fn new(s: f64, xy: f64, yw: f64, wx: f64) -> Self {
+        Self { s, xy, yw, wx }
+    }
+
     fn apply(&self, v: Self::Point) -> Self::Point {
         // TODO faster implementation
         let m = self.into_mat4();
@@ -218,14 +222,43 @@ impl Spinor for SpinorHyperbolic {
         }
     }
 
+    // TODO it's possible to generate these automatically by solving this eq
+    // sin(1/2*theta)=cos(pi/n)/cosh(1/2*d)
+    // newton's method is easy enough to implement and should work
     fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
+        let mut res = vec![];
+        let d_3_7 = 1.0905496635070862;
+        res.push(vec![
+            Self::translation(d_3_7, 0.0),
+            Self::translation(d_3_7, 2.0 * PI / 7.0),
+            Self::translation(d_3_7, 4.0 * PI / 7.0),
+            Self::translation(d_3_7, 6.0 * PI / 7.0),
+            Self::translation(d_3_7, 8.0 * PI / 7.0),
+            Self::translation(d_3_7, 10.0 * PI / 7.0),
+            Self::translation(d_3_7, 12.0 * PI / 7.0),
+        ]);
+        let d_7_3 = 0.5662563067353151;
+        res.push(vec![
+            Self::translation(d_7_3, 0.0),
+            Self::translation(d_7_3, 2.0 * PI / 3.0),
+            Self::translation(d_7_3, 4.0 * PI / 3.0),
+        ]);
+        let d_4_5 = 1.2537393258123553;
+        res.push(vec![
+            Self::translation(d_4_5, 0.0),
+            Self::translation(d_4_5, 2.0 * PI / 5.0),
+            Self::translation(d_4_5, 4.0 * PI / 5.0),
+            Self::translation(d_4_5, 6.0 * PI / 5.0),
+            Self::translation(d_4_5, 8.0 * PI / 5.0),
+        ]);
         let d_5_4 = 1.061275061905036;
-        vec![vec![
+        res.push(vec![
             Self::translation(d_5_4, 0.0),
             Self::translation(d_5_4, PI / 2.0),
             Self::translation(d_5_4, PI),
             Self::translation(d_5_4, 3.0 * PI / 2.0),
-        ]]
+        ]);
+        res
     }
 }
 

@@ -71,6 +71,10 @@ pub struct SpinorEuclidian {
 impl Spinor for SpinorEuclidian {
     type Point = PointEuclidian;
 
+    fn new(s: f64, xy: f64, yw: f64, wx: f64) -> Self {
+        Self { s, xy, yw, wx }
+    }
+
     fn apply(&self, v: Self::Point) -> Self::Point {
         // TODO faster implementation
         let m = self.into_mat4();

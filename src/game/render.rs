@@ -8,11 +8,11 @@ use super::*;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Instance {
     transform: [[f32; 4]; 4],
-    color: [f32; 3],
+    color: [f32; 4],
 }
 
 impl Instance {
-    const ATTRIBS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 =>Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 =>Float32x4];
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
@@ -25,11 +25,8 @@ impl Instance {
 impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
-        // intentionally using euclidian norm
-        let link_len = self.board.neighbor_directions[0]
-            .apply(SpinorT::Point::zero())
-            .flat_magnitude();
-        let stretch_mat = Matrix4::from_nonuniform_scale(link_len as f32, 1.0, 1.0);
+        // TODO need to squeeze into some sort of trapezoid
+        let stretch_mat = Matrix4::from_nonuniform_scale(self.board.link_len, 1.0, 1.0);
         for (idx1, idx2) in self.board.links.iter() {
             let tf1 = self.board.points[*idx1 as usize].transform;
             let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
@@ -37,7 +34,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
 
             instances.push(Instance {
                 transform: ((tf1 * SpinorT::rotation(angle)).into_mat4() * stretch_mat).into(),
-                color: [0.1, 0.1, 0.1],
+                color: [0.1, 0.1, 0.1, 1.0],
             });
         }
         instances
@@ -48,15 +45,18 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let mut instances = Vec::new();
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
-                continue;
+                //continue;
             }
 
+            // TODO
+            let scale_mat = Matrix4::from_scale(0.5);
+
             instances.push(Instance {
-                transform: point.transform.into_mat4().into(),
+                transform: (point.transform.into_mat4() * scale_mat).into(),
                 color: match point.ty {
-                    StoneType::Empty => [0.0, 0.8, 0.0],
-                    StoneType::Black => [0.0, 0.0, 0.0],
-                    StoneType::White => [1.0, 1.0, 1.0],
+                    StoneType::Empty => [0.0, 0.2, 0.0, 0.2],
+                    StoneType::Black => [0.0, 0.0, 0.0, 1.0],
+                    StoneType::White => [1.0, 1.0, 1.0, 1.0],
                 },
             });
             //println!("transform ")

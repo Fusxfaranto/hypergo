@@ -12,12 +12,12 @@ struct InstanceInput {
     @location(3) transform_1: vec4<f32>,
     @location(4) transform_2: vec4<f32>,
     @location(5) transform_3: vec4<f32>,
-    @location(6) color: vec3<f32>,
+    @location(6) color: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec3<f32>,
+    @location(0) color: vec4<f32>,
 };
 
 // TODO consider processing spinors directly in shader, instead of pre-converting to matrix?
@@ -43,5 +43,5 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     //return vec4<f32>(in.clip_position.xyz, 1.0);
-    return vec4<f32>(in.color, 1.0);
+    return in.color;
 }

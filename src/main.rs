@@ -2,6 +2,7 @@ use std::{f64::consts::PI, iter, mem, time};
 
 use cgmath::{abs_diff_ne, vec2, vec4, Matrix4, One, SquareMatrix, Vector2, Zero};
 use circular_buffer::CircularBuffer;
+use clap::Parser;
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
@@ -19,6 +20,13 @@ mod geometry;
 use geometry::euclidian::*;
 use geometry::hyperbolic::*;
 use geometry::*;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(long, default_value_t = 1 << 13)]
+    internal_res: u32,
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -264,6 +272,8 @@ struct State<'a, SpinorT: Spinor> {
 
 impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     async fn new(window: &'a Window) -> Self {
+        let args = Args::parse();
+
         let input_state = InputState::new();
         let view_state = ViewState::new();
         let game_state = GameState::new();
@@ -376,8 +386,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent::REPLACE,
-                            alpha: wgpu::BlendComponent::REPLACE,
+                            color: wgpu::BlendComponent::OVER,
+                            alpha: wgpu::BlendComponent::OVER,
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -403,8 +413,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("render_target_tex"),
             // TODO pick a resolution more smartly
             size: wgpu::Extent3d {
-                width: 1 << 13,
-                height: 1 << 13,
+                width: args.internal_res,
+                height: args.internal_res,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -719,6 +729,23 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 self.view_state.reset_camera();
                 true
             }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::KeyT),
+                        ..
+                    },
+                ..
+            } => {
+                self.view_state.camera = SpinorT::new(
+                    1.3090169943749472,
+                    -0.42532540417601966,
+                    0.5558929702514209,
+                    -0.7651210339710757,
+                );
+                true
+            }
             _ => false,
         }
     }
@@ -966,7 +993,9 @@ pub async fn run() {
                                 }
                                 avg_fps /= fps_ring.len() as f64;
                                 // TODO text rendering
-                                //println!("fps: {avg_fps}");
+                                if frame_count < 600 {
+                                    println!("fps: {avg_fps}");
+                                }
                             }
                         }
                         _ => {}

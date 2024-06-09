@@ -29,6 +29,7 @@ pub trait Spinor:
 {
     type Point: Point;
 
+    fn new(s: f64, xy: f64, yw: f64, wx: f64) -> Self;
     fn translation(amt: f64, angle: f64) -> Self;
     fn translation_to(v: Self::Point) -> Self;
     fn rotation(angle: f64) -> Self;
@@ -55,7 +56,8 @@ pub trait Spinor:
 pub struct ViewState<SpinorT: Spinor> {
     // scale for euclidian, poincare factor for hyperbolic
     pub projection_factor: f64,
-    camera: SpinorT,
+    // TODO shouldn't need to be pub (testing things)
+    pub camera: SpinorT,
 }
 
 // TODO lots of cfg! here, break some of it out into trait impls?

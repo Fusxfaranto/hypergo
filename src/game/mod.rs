@@ -1,4 +1,4 @@
-use std::{f64::consts::PI, ptr};
+use std::{f64::consts::PI, marker::PhantomData, ptr};
 
 use cgmath::{abs_diff_eq, relative_eq, MetricSpace, Vector2, Zero};
 
@@ -6,6 +6,26 @@ pub mod render;
 use render::*;
 
 use crate::geometry::*;
+
+/* struct PanicIterator<T> {
+    phantom: PhantomData<T>,
+}
+
+impl<T> PanicIterator<T> {
+    fn new() -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Iterator for PanicIterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+} */
 
 pub const MAX_STONES: u64 = 1024 * 16;
 pub const STONE_RADIUS: f32 = 0.4;
@@ -22,12 +42,16 @@ struct BoardPoint<SpinorT: Spinor> {
     transform: SpinorT,
     neighbors: Vec<i32>,
     ty: StoneType,
+    reversed: bool,
 }
 
 struct Board<SpinorT: Spinor> {
     points: Vec<BoardPoint<SpinorT>>,
     links: Vec<(i32, i32)>,
-    neighbor_directions: Vec<SpinorT>,
+    //neighbor_directions: Vec<SpinorT>,
+
+    // TODO a little janky to shove this here
+    link_len: f32,
 }
 
 impl<SpinorT: Spinor> Board<SpinorT> {
@@ -35,37 +59,24 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         // TODO support even size probably?
         assert!(edge_len % 2 == 1);
 
+        let link_len = neighbor_directions[0]
+            .apply(SpinorT::Point::zero())
+            .flat_magnitude() as f32;
+
         let mut board = Self {
             points: Vec::new(),
             links: Vec::new(),
-            neighbor_directions: neighbor_directions.clone(),
+            //neighbor_directions: neighbor_directions.clone(),
+            link_len,
         };
 
         let mut test_count = 1;
 
+        let reverse_neighbor_directions: Vec<SpinorT> =
+            neighbor_directions.iter().map(|d| d.reverse()).collect();
         /*
-
-        let mut cur_transform = SpinorT::one();
-        board.add_point(cur_transform);
-
-        for ring in 1..(edge_len / 2 + 1) {
-            for dir in neighbor_directions.iter() {
-                for i in 0..(2 * ring) {
-                    if i == 0 && ptr::eq(dir, &neighbor_directions[0]) {
-                        cur_transform = *board.neighbor_directions.last().unwrap() * cur_transform;
-                    } else {
-                        cur_transform = *dir * cur_transform;
-                    }
-                    board.add_point(cur_transform);
-                    test_count += 1;
-                    if test_count >= 20000 {
-                        return board;
-                    }
-                }
-            }
-        } */
-
         let mut chebyshev_dirs = neighbor_directions.clone();
+        let mut reverse_chebyshev_dirs = reverse_neighbor_directions.clone();
         for dir1 in neighbor_directions.iter() {
             for dir2 in neighbor_directions.iter() {
                 if ptr::eq(dir1, dir2) {
@@ -76,20 +87,84 @@ impl<SpinorT: Spinor> Board<SpinorT> {
                     continue;
                 }
                 chebyshev_dirs.push(d);
+                reverse_chebyshev_dirs.push(d.reverse());
             }
         }
 
-        board.add_point(SpinorT::one());
+        board.add_point(
+            &neighbor_directions,
+            &reverse_neighbor_directions,
+            SpinorT::one(),
+        );
         let mut start_i = 0;
-        for _ring in 1..(edge_len / 2 + 1) {
+        for ring in 1..(edge_len / 2 + 1) {
             let l = board.points.len();
             for i in start_i..l {
-                for dir in chebyshev_dirs.iter() {
+                let iter = if ring % 2 == 1 {
+                    println!("normal");
+                    chebyshev_dirs.iter()
+                } else {
+                    println!("reverse");
+                    reverse_chebyshev_dirs.iter()
+                };
+                for dir in iter {
                     let t = *dir * board.points[i].transform;
                     if board.find_point(t.apply(SpinorT::Point::zero()), 1e-3) == -1 {
-                        board.add_point(t);
+                        board.add_point(&neighbor_directions, &reverse_neighbor_directions, t);
                         test_count += 1;
-                        if test_count >= 800000000 {
+                        if test_count >= 8 {
+                            return board;
+                        }
+                    }
+                }
+            }
+            start_i = l;
+        } */
+        /*
+        println!("{:?}", neighbor_directions[0]);
+        println!(
+            "{:?}",
+            neighbor_directions[0] * neighbor_directions[1].reverse()
+        );
+        todo!(); */
+
+        board.add_point(
+            &neighbor_directions,
+            &reverse_neighbor_directions,
+            SpinorT::one(),
+            false,
+        );
+        let mut start_i = 0;
+        for ring in 1..(edge_len / 2 + 1) {
+            let l = board.points.len();
+            for i in start_i..l {
+                for j in 0..neighbor_directions.len() {
+                    let mut cur_transform = board.points[i].transform;
+                    //for &dir in (&neighbor_directions[0..1]).iter().cycle().skip(j) {
+                    for (k, &dir) in neighbor_directions.iter().cycle().skip(j).enumerate() {
+                        let link_reversed = (k % 2 == 1) ^ board.points[i].reversed;
+                        cur_transform = if link_reversed {
+                            cur_transform * dir.reverse()
+                        } else {
+                            cur_transform * dir
+                        };
+                        let pos = cur_transform.apply(SpinorT::Point::zero());
+                        if board.find_point(pos, 1e-3) != -1 {
+                            if k == 0 {
+                                continue;
+                            } else {
+                                break;
+                            }
+                        }
+                        board.add_point(
+                            &neighbor_directions,
+                            &reverse_neighbor_directions,
+                            cur_transform,
+                            !link_reversed,
+                        );
+
+                        test_count += 1;
+                        if test_count >= 2500 {
                             return board;
                         }
                     }
@@ -101,18 +176,30 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         board
     }
 
-    fn add_point(&mut self, transform: SpinorT) {
+    // TODO shouldn't need to check (non-)reverse neighbors on every point, be smarter
+    fn add_point(
+        &mut self,
+        neighbor_directions: &Vec<SpinorT>,
+        reverse_neighbor_directions: &Vec<SpinorT>,
+        transform: SpinorT,
+        reversed: bool,
+    ) {
         let mut point = BoardPoint {
             pos: transform.apply(SpinorT::Point::zero()),
             transform,
             neighbors: Vec::new(),
             ty: StoneType::Empty,
+            reversed,
         };
         let this_idx = self.points.len() as i32;
 
         println!("adding point {:?} at {:?}", self.points.len(), point.pos);
+        println!("with transform {:?}", transform);
         // not the best approach
-        for dir in self.neighbor_directions.iter() {
+        for dir in neighbor_directions
+            .iter()
+            .chain(reverse_neighbor_directions.iter())
+        {
             //let i = self.find_point(dir.apply(point.pos), 0.1);
             let checking_pos = (point.transform * *dir).apply(SpinorT::Point::zero());
             println!("checking for neighbor at  {:?}", checking_pos);
@@ -153,7 +240,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
         // TODO select between multiple
         let neighbor_directions = SpinorT::tiling_neighbor_directions()[0].clone();
-        let board = Board::make_board(neighbor_directions, 9);
+        let board = Board::make_board(neighbor_directions, 11);
         Self {
             board,
             turn: Turn::Black,
