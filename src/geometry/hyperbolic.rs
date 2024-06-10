@@ -61,8 +61,16 @@ impl Point for PointHyperbolic {
         self.y.atan2(self.x)
     }
 
-    fn flat_magnitude(&self) -> f64 {
+    /*     fn flat_magnitude(&self) -> f64 {
         (self.x * self.x + self.y * self.y).sqrt() / self.w
+    } */
+
+    fn to_projective<S: 'static + BaseFloat>(&self) -> Vector3<S>
+    where
+        f32: AsPrimitive<S>,
+        f64: AsPrimitive<S>,
+    {
+        vec3(self.x.as_(), self.y.as_(), self.w.as_())
     }
 }
 
@@ -85,6 +93,7 @@ impl ops::Mul<f64> for PointHyperbolic {
 
     // TODO pretty sure this is wrong
     fn mul(self, rhs: f64) -> Self {
+        todo!();
         Self {
             x: rhs * self.x,
             y: rhs * self.y,
@@ -109,14 +118,19 @@ impl Spinor for SpinorHyperbolic {
     }
 
     fn apply(&self, v: Self::Point) -> Self::Point {
-        // TODO faster implementation
-        let m = self.into_mat4();
-        let v_out = m * vec4(v.x, v.y, 0.0, v.w);
-        return Self::Point {
-            x: v_out.x,
-            y: v_out.y,
-            w: v_out.w,
-        };
+        Self::Point {
+            x: (self.s * self.s + self.wx * self.wx - self.yw * self.yw - self.xy * self.xy) * v.x
+                + (2.0 * self.s * self.xy - 2.0 * self.wx * self.yw) * v.y
+                + (-2.0 * self.s * self.wx + 2.0 * self.yw * self.xy) * v.w,
+            y: (-2.0 * self.s * self.xy - 2.0 * self.wx * self.yw) * v.x
+                + (self.s * self.s - self.wx * self.wx + self.yw * self.yw - self.xy * self.xy)
+                    * v.y
+                + (2.0 * self.s * self.yw + 2.0 * self.wx * self.xy) * v.w,
+            w: (-2.0 * self.s * self.wx - 2.0 * self.yw * self.xy) * v.x
+                + (2.0 * self.s * self.yw - 2.0 * self.wx * self.xy) * v.y
+                + (self.s * self.s + self.wx * self.wx + self.yw * self.yw + self.xy * self.xy)
+                    * v.w,
+        }
     }
 
     fn reverse(&self) -> Self {
@@ -160,23 +174,22 @@ impl Spinor for SpinorHyperbolic {
         )*/
         Matrix4::new(
             (self.s * self.s + self.wx * self.wx - self.yw * self.yw - self.xy * self.xy).as_(),
-            (2.0 * self.s * self.xy - 2.0 * self.wx * self.yw).as_(),
-            0.0.as_(),
-            (-2.0 * self.s * self.wx + 2.0 * self.yw * self.xy).as_(),
             (-2.0 * self.s * self.xy - 2.0 * self.wx * self.yw).as_(),
-            (self.s * self.s - self.wx * self.wx + self.yw * self.yw - self.xy * self.xy).as_(),
-            0.0.as_(),
-            (2.0 * self.s * self.yw + 2.0 * self.wx * self.xy).as_(),
-            0.0.as_(),
-            0.0.as_(),
-            0.0.as_(),
             0.0.as_(),
             (-2.0 * self.s * self.wx - 2.0 * self.yw * self.xy).as_(),
+            (2.0 * self.s * self.xy - 2.0 * self.wx * self.yw).as_(),
+            (self.s * self.s - self.wx * self.wx + self.yw * self.yw - self.xy * self.xy).as_(),
+            0.0.as_(),
             (2.0 * self.s * self.yw - 2.0 * self.wx * self.xy).as_(),
+            0.0.as_(),
+            0.0.as_(),
+            0.0.as_(),
+            0.0.as_(),
+            (-2.0 * self.s * self.wx + 2.0 * self.yw * self.xy).as_(),
+            (2.0 * self.s * self.yw + 2.0 * self.wx * self.xy).as_(),
             0.0.as_(),
             (self.s * self.s + self.wx * self.wx + self.yw * self.yw + self.xy * self.xy).as_(),
         )
-        .transpose()
     }
 
     fn translation(amt: f64, angle: f64) -> Self {
@@ -221,45 +234,12 @@ impl Spinor for SpinorHyperbolic {
             wx: 0.0,
         }
     }
-    /*
-    fn tiling_neighbor_directions() -> Vec<Vec<Self>> {
-        let mut res = vec![];
-        let d_3_7 = 1.0905496635070862;
-        res.push(vec![
-            Self::translation(d_3_7, 0.0),
-            Self::translation(d_3_7, 2.0 * PI / 7.0),
-            Self::translation(d_3_7, 4.0 * PI / 7.0),
-            Self::translation(d_3_7, 6.0 * PI / 7.0),
-            Self::translation(d_3_7, 8.0 * PI / 7.0),
-            Self::translation(d_3_7, 10.0 * PI / 7.0),
-            Self::translation(d_3_7, 12.0 * PI / 7.0),
-        ]);
-        let d_7_3 = 0.5662563067353151;
-        res.push(vec![
-            Self::translation(d_7_3, 0.0),
-            Self::translation(d_7_3, 2.0 * PI / 3.0),
-            Self::translation(d_7_3, 4.0 * PI / 3.0),
-        ]);
-        let d_4_5 = 1.2537393258123553;
-        res.push(vec![
-            Self::translation(d_4_5, 0.0),
-            Self::translation(d_4_5, 2.0 * PI / 5.0),
-            Self::translation(d_4_5, 4.0 * PI / 5.0),
-            Self::translation(d_4_5, 6.0 * PI / 5.0),
-            Self::translation(d_4_5, 8.0 * PI / 5.0),
-        ]);
-        let d_5_4 = 1.061275061905036;
-        res.push(vec![
-            Self::translation(d_5_4, 0.0),
-            Self::translation(d_5_4, PI / 2.0),
-            Self::translation(d_5_4, PI),
-            Self::translation(d_5_4, 3.0 * PI / 2.0),
-        ]);
-        res
-    } */
 
     fn tiling_get_distance(sides: u32, angle: f64) -> f64 {
         2.0 * ((PI / (sides as f64)).cos() / (0.5 * angle).sin()).acosh()
+    }
+    fn distance_to_flat(d: f64) -> f64 {
+        d.sinh() / d.cosh()
     }
 }
 

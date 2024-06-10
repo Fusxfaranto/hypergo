@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::ops;
 
 use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, Vector2};
-use cgmath::{InnerSpace, Zero};
+use cgmath::{InnerSpace, Vector3, Zero};
 use wgpu::SurfaceConfiguration;
 
 pub mod euclidian;
@@ -18,7 +18,12 @@ pub trait Point: Copy + Clone + Debug + PartialEq + AbsDiffEq // + ops::Mul<f64,
     fn from_projective(x: f64, y: f64, w: f64) -> Self;
 
     fn angle(&self) -> f64;
-    fn flat_magnitude(&self) -> f64;
+    /*     fn flat_magnitude(&self) -> f64; */
+
+    fn to_projective<S: 'static + BaseFloat>(&self) -> Vector3<S>
+    where
+        f32: AsPrimitive<S>,
+        f64: AsPrimitive<S>;
 
     fn from_flat_vec(v: Vector2<f64>) -> Self {
         Self::from_flat(v.x, v.y)
@@ -45,6 +50,7 @@ pub trait Spinor:
 
     // TODO doesn't really fit here
     fn tiling_get_distance(sides: u32, angle: f64) -> f64;
+    fn distance_to_flat(d: f64) -> f64;
 
     fn magnitude(&self) -> f64 {
         self.magnitude2().sqrt()
@@ -61,23 +67,22 @@ pub struct TilingParameters {
     pub around_vertex: u32,
     pub angle: f64,
     pub distance: f64,
+    // in flat coordinates
+    pub link_len: f64,
 }
 
 impl TilingParameters {
     pub fn new<SpinorT: Spinor>(sides: u32, around_vertex: u32) -> TilingParameters {
         let angle = 2.0 * PI / (around_vertex as f64);
         let distance = SpinorT::tiling_get_distance(sides, angle);
+        let link_len = SpinorT::distance_to_flat(distance);
         Self {
             sides,
             around_vertex,
             angle,
             distance,
+            link_len,
         }
-    }
-
-    // klein distance, from center
-    pub fn link_len(&self) -> f64 {
-        self.distance.sinh() / self.distance.cosh()
     }
 }
 

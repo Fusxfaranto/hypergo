@@ -84,23 +84,6 @@ const RENDER_TARGET_VERTS: &[RenderTargetVertex] = &[
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniform {
     transform: [[f32; 4]; 4],
 }
@@ -112,54 +95,6 @@ impl Uniform {
         }
     }
 }
-
-const SQRT2: f32 = 1.4142135623730951;
-const STONE_VERTS: &[Vertex] = &[
-    Vertex {
-        position: [-STONE_RADIUS / SQRT2, STONE_RADIUS / SQRT2, 0.0],
-    },
-    Vertex {
-        position: [-STONE_RADIUS, 0.0, 0.0],
-    },
-    Vertex {
-        position: [-STONE_RADIUS / SQRT2, -STONE_RADIUS / SQRT2, 0.0],
-    },
-    Vertex {
-        position: [0.0, -STONE_RADIUS, 0.0],
-    },
-    Vertex {
-        position: [STONE_RADIUS / SQRT2, -STONE_RADIUS / SQRT2, 0.0],
-    },
-    Vertex {
-        position: [STONE_RADIUS, 0.0, 0.0],
-    },
-    Vertex {
-        position: [STONE_RADIUS / SQRT2, STONE_RADIUS / SQRT2, 0.0],
-    },
-    Vertex {
-        position: [0.0, STONE_RADIUS, 0.0],
-    },
-];
-
-const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7];
-
-const LINK_WIDTH: f32 = 0.025;
-const LINK_VERTS: &[Vertex] = &[
-    Vertex {
-        position: [-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
-    },
-    Vertex {
-        position: [-LINK_WIDTH / 2.0, LINK_WIDTH / 2.0, 0.0],
-    },
-    Vertex {
-        position: [1.0 + LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0, 0.0],
-    },
-    Vertex {
-        position: [1.0 + LINK_WIDTH / 2.0, LINK_WIDTH / 2.0, 0.0],
-    },
-];
-
-const LINK_INDICES: &[u16] = &[0, 2, 1, 1, 2, 3];
 
 struct InputState {
     forward: bool,
@@ -246,6 +181,10 @@ struct State<'a, SpinorT: Spinor> {
     render_target_tex_sampler: wgpu::Sampler,
     render_target_tex_bind_group: wgpu::BindGroup,
 
+    models: Vec<Model>,
+
+    // TODO if these are going to continue using the same shader,
+    // they should share gpu buffers
     stone_vertex_buffer: wgpu::Buffer,
     stone_index_buffer: wgpu::Buffer,
     stone_instances: Vec<Instance>,
@@ -573,14 +512,18 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
+        let models = make_models::<SpinorT>();
+        println!("{:?}", models);
+        //panic!();
+
         let stone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("stone_vertex_buffer"),
-            contents: bytemuck::cast_slice(STONE_VERTS),
+            contents: bytemuck::cast_slice(&models[0].verts),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let stone_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("stone_index_buffer"),
-            contents: bytemuck::cast_slice(STONE_INDICES),
+            contents: bytemuck::cast_slice(&models[0].indices),
             usage: wgpu::BufferUsages::INDEX,
         });
         let stone_instances = Vec::new();
@@ -594,12 +537,12 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
 
         let link_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("link_vertex_buffer"),
-            contents: bytemuck::cast_slice(LINK_VERTS),
+            contents: bytemuck::cast_slice(&models[1].verts),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let link_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("link_index_buffer"),
-            contents: bytemuck::cast_slice(LINK_INDICES),
+            contents: bytemuck::cast_slice(&models[1].indices),
             usage: wgpu::BufferUsages::INDEX,
         });
         let link_instances = game_state.make_link_instances();
@@ -625,6 +568,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             render_target_tex_view,
             render_target_tex_sampler,
             render_target_tex_bind_group,
+            models,
             stone_vertex_buffer,
             stone_index_buffer,
             stone_instances,
@@ -829,7 +773,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         render_pass.set_vertex_buffer(1, self.link_instance_buffer.slice(..));
         render_pass.set_index_buffer(self.link_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(
-            0..LINK_INDICES.len() as _,
+            0..self.models[1].indices.len() as _,
             0,
             0..self.link_instances.len() as _,
         );
@@ -838,7 +782,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         render_pass.set_vertex_buffer(1, self.stone_instance_buffer.slice(..));
         render_pass.set_index_buffer(self.stone_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(
-            0..STONE_INDICES.len() as _,
+            0..self.models[0].indices.len() as _,
             0,
             0..self.stone_instances.len() as _,
         );

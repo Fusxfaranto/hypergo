@@ -1,6 +1,6 @@
 use std::{f64::consts::PI, ops};
 
-use cgmath::{assert_abs_diff_eq, vec2, vec4, Matrix, Matrix4, Vector2, Zero};
+use cgmath::{assert_abs_diff_eq, vec2, vec3, vec4, Matrix, Matrix4, Vector2, Zero};
 
 use super::*;
 
@@ -32,9 +32,17 @@ impl Point for PointEuclidian {
         self.y.atan2(self.x)
     }
 
-    fn flat_magnitude(&self) -> f64 {
-        (self.x * self.x + self.y * self.y).sqrt()
+    fn to_projective<S: 'static + BaseFloat>(&self) -> Vector3<S>
+    where
+        f32: AsPrimitive<S>,
+        f64: AsPrimitive<S>,
+    {
+        vec3(self.x.as_(), self.y.as_(), 1.0.as_())
     }
+
+    /*    fn flat_magnitude(&self) -> f64 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    } */
 }
 
 impl AbsDiffEq for PointEuclidian {
@@ -76,14 +84,15 @@ impl Spinor for SpinorEuclidian {
     }
 
     fn apply(&self, v: Self::Point) -> Self::Point {
-        // TODO faster implementation
-        let m = self.into_mat4();
-        let v_out = m * vec4(v.x, v.y, 0.0, 1.0);
-        assert_abs_diff_eq!(v_out.w, 1.0, epsilon = 1e-6);
-        return Self::Point {
-            x: v_out.x,
-            y: v_out.y,
-        };
+        assert_abs_diff_eq!(self.s * self.s + self.xy * self.xy, 1.0, epsilon = 1e-6);
+        Self::Point {
+            x: (self.s * self.s - self.xy * self.xy) * v.x
+                + (2.0 * self.s * self.xy) * v.y
+                + (-2.0 * self.s * self.wx + 2.0 * self.yw * self.xy),
+            y: (-2.0 * self.s * self.xy) * v.x
+                + (self.s * self.s - self.xy * self.xy) * v.y
+                + (2.0 * self.s * self.yw + 2.0 * self.wx * self.xy),
+        }
     }
 
     fn reverse(&self) -> Self {
@@ -162,6 +171,10 @@ impl Spinor for SpinorEuclidian {
             epsilon = 1e-11
         );
         1.0
+    }
+
+    fn distance_to_flat(d: f64) -> f64 {
+        d
     }
 }
 

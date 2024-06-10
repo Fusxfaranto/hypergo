@@ -28,7 +28,7 @@ impl<T> Iterator for PanicIterator<T> {
 } */
 
 pub const MAX_STONES: u64 = 1024 * 16;
-pub const STONE_RADIUS: f32 = 0.4;
+pub const STONE_RADIUS: f64 = 0.4;
 
 #[derive(PartialEq)]
 enum StoneType {
@@ -127,6 +127,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
     }
 
     // TODO shouldn't need to check (non-)reverse neighbors on every point, be smarter
+    // TODO currently seems to double-add neigbors, fix that too
     fn add_point(
         &mut self,
         neighbor_directions: &Vec<SpinorT>,
@@ -189,9 +190,9 @@ pub struct GameState<SpinorT: Spinor> {
 impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn new() -> Self {
         let board = if cfg!(feature = "euclidian_geometry") {
-            Board::make_board(TilingParameters::new::<SpinorT>(6, 3), 15)
+            Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
         } else {
-            Board::make_board(TilingParameters::new::<SpinorT>(10, 4), 7)
+            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 5)
         };
         Self {
             board,
@@ -265,6 +266,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     }
 
     fn try_select_point(&mut self, pos: SpinorT::Point) -> bool {
+        // TODO radius is wrong, should be dynamic here
         let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
             let point = &mut self.board.points[i as usize];
