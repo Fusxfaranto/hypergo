@@ -38,8 +38,10 @@ enum StoneType {
 }
 
 struct BoardPoint<SpinorT: Spinor> {
+    // TODO use for relative pos?
     pos: SpinorT::Point,
     transform: SpinorT,
+    relative_transform: SpinorT,
     neighbors: Vec<i32>,
     ty: StoneType,
     reversed: bool,
@@ -85,7 +87,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             false,
         );
         let mut start_i = 0;
-        for ring in 1..(edge_len / 2 + 1) {
+        for _ring in 1..(edge_len / 2 + 1) {
             let l = board.points.len();
             for i in start_i..l {
                 for j in 0..neighbor_directions.len() {
@@ -98,6 +100,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
                         } else {
                             cur_transform * dir
                         };
+                        cur_transform.normalize();
                         let pos = cur_transform.apply(SpinorT::Point::zero());
                         if board.find_point(pos, 1e-3) != -1 {
                             if k == 0 {
@@ -138,6 +141,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         let mut point = BoardPoint {
             pos: transform.apply(SpinorT::Point::zero()),
             transform,
+            relative_transform: transform,
             neighbors: Vec::new(),
             ty: StoneType::Empty,
             reversed,
@@ -174,6 +178,12 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         }
         -1
     }
+
+    fn update_floating_origin(&mut self, camera_r: &SpinorT) {
+        for point in self.points.iter_mut() {
+            point.relative_transform = *camera_r * point.transform;
+        }
+    }
 }
 
 enum Turn {
@@ -192,7 +202,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let board = if cfg!(feature = "euclidian_geometry") {
             Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
         } else {
-            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 5)
+            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
         };
         Self {
             board,
@@ -306,5 +316,9 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             };
             self.needs_render = true;
         }
+    }
+
+    pub fn update_floating_origin(&mut self, camera_r: &SpinorT) {
+        self.board.update_floating_origin(camera_r);
     }
 }

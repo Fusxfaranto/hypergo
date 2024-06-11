@@ -85,6 +85,9 @@ pub fn make_models<SpinorT: Spinor>() -> Vec<Model> {
         .collect()
 }
 
+// potential optimizations, since these are going to be called more
+// - don't allocate every call
+// - skip items out of viewable range
 const TEST_TRANS: f64 = 0.0;
 impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
@@ -97,8 +100,11 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             1.0,
         );
         for (idx1, idx2) in self.board.links.iter() {
-            let tf1 = self.board.points[*idx1 as usize].transform;
-            let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
+            //let tf1 = self.board.points[*idx1 as usize].transform;
+            //let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
+            let tf1 = self.board.points[*idx1 as usize].relative_transform;
+            let rel_pos2 = (tf1.reverse() * self.board.points[*idx2 as usize].relative_transform)
+                .apply(SpinorT::Point::zero());
             let angle = -rel_pos2.angle();
 
             instances.push(Instance {
@@ -111,7 +117,6 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         instances
     }
 
-    // incremental updates would be nice, eventually
     pub fn make_stone_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
 
@@ -125,7 +130,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             }
 
             instances.push(Instance {
-                transform: ((test_trans * point.transform).into_mat4() * scale_mat).into(),
+                transform: ((test_trans * point.relative_transform).into_mat4() * scale_mat).into(),
                 color: match point.ty {
                     StoneType::Empty => [0.0, 0.2, 0.0, 0.2],
                     StoneType::Black => [0.0, 0.0, 0.0, 1.0],

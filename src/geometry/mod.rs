@@ -91,6 +91,7 @@ pub struct ViewState<SpinorT: Spinor> {
     pub projection_factor: f64,
     // TODO shouldn't need to be pub (testing things)
     pub camera: SpinorT,
+    floating_origin: SpinorT,
 }
 
 // TODO lots of cfg! here, break some of it out into trait impls?
@@ -99,6 +100,7 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         Self {
             projection_factor: 1.0,
             camera: SpinorT::one(),
+            floating_origin: SpinorT::one(),
         }
     }
 
@@ -158,11 +160,19 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
         //     "transformation {:?}",
         //     SpinorT::translation_to(pos_from) * SpinorT::translation_to(pos_to).reverse()
         // );
+        // TODO i don't really understand the math on this
+        /*         self.camera = self.camera
+         * SpinorT::translation_to(pos_to)
+         * SpinorT::translation_to(pos_from).reverse(); */
         self.camera = SpinorT::translation_to(pos_from)
             * SpinorT::translation_to(pos_to).reverse()
             * self.camera;
         self.camera.normalize();
         //println!("camera {:?}", self.camera);
+    }
+
+    pub fn update_floating_origin(&mut self) {
+        self.floating_origin = self.camera;
     }
 
     pub fn get_camera_mat(&self) -> Matrix4<f32> {
@@ -171,6 +181,6 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
             scale_mat.w.w = 1.0 / self.projection_factor as f32;
         }
 
-        scale_mat * self.camera.reverse().into_mat4()
+        scale_mat * (self.camera.reverse() * self.floating_origin).into_mat4()
     }
 }

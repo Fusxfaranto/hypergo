@@ -549,7 +549,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         let link_instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("link_instance_buffer"),
             contents: bytemuck::cast_slice(&link_instances),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         Self {
@@ -694,7 +694,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, frame_count: i32) {
         const SPEED: f64 = 0.1;
         if self.input_state.back {
             self.view_state.translate(SPEED, PI);
@@ -720,6 +720,14 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             }
         }
 
+        if frame_count % 11 == 0 {
+            self.view_state.update_floating_origin();
+            self.game_state
+                .update_floating_origin(&self.view_state.camera.reverse());
+
+            self.game_state.needs_render = true;
+        }
+
         self.uniform.transform = self.view_state.get_camera_mat().into();
         self.queue.write_buffer(
             &self.uniform_buffer,
@@ -728,6 +736,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         );
 
         if self.game_state.needs_render {
+            self.link_instances = self.game_state.make_link_instances();
+            self.queue.write_buffer(
+                &self.link_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.link_instances[..]),
+            );
+
             self.stone_instances = self.game_state.make_stone_instances();
             self.queue.write_buffer(
                 &self.stone_instance_buffer,
@@ -905,7 +920,7 @@ pub async fn run() {
                                 return;
                             }
 
-                            state.update();
+                            state.update(frame_count);
                             match state.render() {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

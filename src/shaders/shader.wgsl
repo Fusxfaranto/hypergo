@@ -35,13 +35,13 @@ fn vs_main(
         instance.transform_3,
     );
     out.color = instance.color;
-    //out.clip_position = vertex_uniform.transform * instance_transform * 
-    //    vec4<f32>(model.position, 1.0);
+    out.clip_position = vertex_uniform.transform * instance_transform * 
+        vec4<f32>(model.position.xy, 0.0, model.position.z);
     // var temp_pos = instance_transform * 
     //     vec4<f32>(model.position, 1.0);
     // out.clip_position = vertex_uniform.transform * (temp_pos / temp_pos.w);
-    var transform = vertex_uniform.transform * instance_transform;
-    out.clip_position = transform * vec4<f32>(model.position.xy, 0.0, model.position.z);
+    // var transform = vertex_uniform.transform * instance_transform;
+    // out.clip_position = transform * vec4<f32>(model.position.xy, 0.0, model.position.z);
     return out;
 }
 
