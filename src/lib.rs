@@ -1,8 +1,11 @@
-use std::{f64::consts::PI, iter, mem, time};
+use std::{f64::consts::PI, iter, mem};
 
 use cgmath::{abs_diff_ne, vec2, vec4, Matrix4, One, SquareMatrix, Vector2, Zero};
 use circular_buffer::CircularBuffer;
 use clap::Parser;
+use env_logger::{Builder, WriteStyle};
+use log::{info, LevelFilter};
+use web_time::Instant;
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
@@ -11,6 +14,9 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowBuilder},
 };
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
 mod game;
 use game::render::*;
@@ -24,8 +30,10 @@ use geometry::*;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(long, default_value_t = 1 << 13)]
+    #[arg(long, default_value_t = 1 << 11)]
     internal_res: u32,
+    #[arg(long, default_value_t = 4)]
+    msaa: u32,
 }
 
 #[repr(C)]
@@ -50,6 +58,7 @@ impl RenderTargetVertex {
 struct OuterUniform {
     f: f32,
     skip_reprojection: u32,
+    padding: u64,
 }
 
 impl OuterUniform {
@@ -57,6 +66,7 @@ impl OuterUniform {
         Self {
             f: 1.0,
             skip_reprojection: cfg!(feature = "euclidian_geometry") as u32,
+            padding: 0,
         }
     }
 }
@@ -213,6 +223,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     async fn new(window: &'a Window) -> Self {
         let args = Args::parse();
 
+        let ms_count = if cfg!(target_arch = "wasm32") {
+            1
+        } else {
+            args.msaa
+        };
+        assert!(ms_count.count_ones() == 1);
+
         let input_state = InputState::new();
         let view_state = ViewState::new();
         let game_state = GameState::new();
@@ -220,7 +237,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
+            #[cfg(target_arch = "wasm32")]
+            backends: wgpu::Backends::GL,
             ..Default::default()
         });
 
@@ -242,7 +262,11 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     // TODO presumably this can be made optional?
                     //required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                     required_features: wgpu::Features::default(),
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
+                    },
                 },
                 None,
             )
@@ -297,7 +321,6 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("uniform_bind_group"),
         });
 
-        const MULTISAMPLE_COUNT: u32 = 4;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
@@ -342,7 +365,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState {
-                    count: MULTISAMPLE_COUNT,
+                    count: ms_count,
                     mask: !0,
                     alpha_to_coverage_enabled: false,
                 },
@@ -357,7 +380,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: MULTISAMPLE_COUNT,
+            sample_count: ms_count,
             dimension: wgpu::TextureDimension::D2,
             format: surface_format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -393,7 +416,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            multisampled: true,
+                            multisampled: ms_count > 1,
                             view_dimension: wgpu::TextureViewDimension::D2,
                             sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         },
@@ -423,9 +446,20 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             label: Some("render_target_tex_bind_group"),
         });
 
+        let outer_shader_src = if ms_count == 1 {
+            concat!(
+                include_str!("shaders/outer_shader_shared.wgsl"),
+                include_str!("shaders/outer_shader_noms.wgsl")
+            )
+        } else {
+            concat!(
+                include_str!("shaders/outer_shader_shared.wgsl"),
+                include_str!("shaders/outer_shader_ms.wgsl")
+            )
+        };
         let outer_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("outer_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/outer_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(outer_shader_src.into()),
         });
         let outer_uniform = OuterUniform::new();
         let outer_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -513,7 +547,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             });
 
         let models = make_models::<SpinorT>();
-        println!("{:?}", models);
+        info!("{:?}", models);
         //panic!();
 
         let stone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -604,7 +638,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     }
     /*
     fn handle_mouse(&mut self, x: f64, y: f64) {
-        //println!("handle_mouse {x} {y}");
+        //info!("handle_mouse {x} {y}");
         if self.is_dragging {
             // TODO
             //self.view_state
@@ -861,8 +895,18 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
-    env_logger::init();
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "wasm32")] {
+            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+            console_log::init_with_level(log::Level::Info).expect("Couldn't initialize logger");
+        } else {
+            let mut log_builder = Builder::new();
+            //env_logger::init();
+            log_builder.filter(Some("hypergo"), LevelFilter::Info).write_style(WriteStyle::Always).init();
+        }
+    }
 
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
@@ -874,6 +918,24 @@ pub async fn run() {
         .build(&event_loop)
         .unwrap();
 
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::dpi::PhysicalSize;
+
+        use winit::platform::web::WindowExtWebSys;
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| {
+                let dst = doc.get_element_by_id("game-render")?;
+                let canvas = web_sys::Element::from(window.canvas()?);
+                dst.append_child(&canvas).ok()?;
+                Some(())
+            })
+            .expect("Couldn't append canvas to document body.");
+
+        let _ = window.request_inner_size(PhysicalSize::new(400, 400));
+    }
+
     #[cfg(feature = "euclidian_geometry")]
     use SpinorEuclidian as SpinorT;
     #[cfg(not(feature = "euclidian_geometry"))]
@@ -883,7 +945,7 @@ pub async fn run() {
     let mut surface_configured = false;
 
     let mut frame_count = 0;
-    let mut last_frame_time = time::Instant::now();
+    let mut last_frame_time = Instant::now();
     let mut fps_ring = CircularBuffer::<4, f64>::new();
 
     event_loop
@@ -911,7 +973,7 @@ pub async fn run() {
                         WindowEvent::Resized(physical_size) => {
                             surface_configured = true;
                             state.resize(*physical_size);
-                            println!("resize event {:?}", *physical_size);
+                            info!("resize event {:?}", *physical_size);
                         }
                         WindowEvent::RedrawRequested => {
                             state.window().request_redraw();
@@ -939,10 +1001,10 @@ pub async fn run() {
                             if frame_count % FPS_FAC == 0 {
                                 fps_ring.push_back(
                                     (FPS_FAC as f64)
-                                        / (time::Instant::now() - last_frame_time).as_secs_f64(),
+                                        / (Instant::now() - last_frame_time).as_secs_f64(),
                                 );
 
-                                last_frame_time = time::Instant::now();
+                                last_frame_time = Instant::now();
                             }
 
                             if frame_count % 60 == 0 {
@@ -953,7 +1015,7 @@ pub async fn run() {
                                 avg_fps /= fps_ring.len() as f64;
                                 // TODO text rendering
                                 if frame_count < 600 {
-                                    println!("fps: {avg_fps}");
+                                    info!("fps: {avg_fps}");
                                 }
                             }
                         }
@@ -964,8 +1026,4 @@ pub async fn run() {
             _ => {}
         })
         .unwrap();
-}
-
-fn main() {
-    pollster::block_on(run());
 }

@@ -1,6 +1,7 @@
 use std::{iter, mem};
 
 use cgmath::{vec2, vec3, InnerSpace, Matrix4, SquareMatrix, Vector3};
+use log::info;
 
 use super::*;
 
@@ -138,7 +139,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 },
             });
             /*             if point.pos.distance(SpinorT::Point::zero()) > 10.1 {
-                println!("transform {:?}", instances.last().unwrap().transform);
+                info!("transform {:?}", instances.last().unwrap().transform);
             } */
         }
         instances

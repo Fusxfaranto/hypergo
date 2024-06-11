@@ -1,6 +1,7 @@
 use std::{f64::consts::PI, marker::PhantomData, ptr};
 
 use cgmath::{abs_diff_eq, relative_eq, MetricSpace, Vector2, Zero};
+use log::info;
 
 pub mod render;
 use render::*;
@@ -148,8 +149,8 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         };
         let this_idx = self.points.len() as i32;
 
-        println!("adding point {:?} at {:?}", self.points.len(), point.pos);
-        println!("with transform {:?}", transform);
+        info!("adding point {:?} at {:?}", self.points.len(), point.pos);
+        info!("with transform {:?}", transform);
         // not the best approach
         for dir in neighbor_directions
             .iter()
@@ -157,13 +158,13 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         {
             //let i = self.find_point(dir.apply(point.pos), 0.1);
             let checking_pos = (point.transform * *dir).apply(SpinorT::Point::zero());
-            println!("checking for neighbor at  {:?}", checking_pos);
+            info!("checking for neighbor at  {:?}", checking_pos);
             let i = self.find_point(checking_pos, 0.1);
             if i >= 0 {
                 point.neighbors.push(i);
                 self.points[i as usize].neighbors.push(this_idx);
                 self.links.push((i, this_idx));
-                println!("adding link {:?}", self.links.last().unwrap());
+                info!("adding link {:?}", self.links.last().unwrap());
             }
         }
         self.points.push(point);
@@ -280,7 +281,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
             let point = &mut self.board.points[i as usize];
-            println!(
+            info!(
                 "found point {:?} {:?}, neighbors {:?}",
                 i, point.pos, point.neighbors
             );
@@ -292,7 +293,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                     };
                     if !self.update_captures(i) {
                         if self.is_self_capture(i) {
-                            println!("self capture");
+                            info!("self capture");
                             let point = &mut self.board.points[i as usize];
                             point.ty = StoneType::Empty;
                             return false;
@@ -303,7 +304,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 _ => false,
             }
         } else {
-            println!("no point found at {:?}", pos);
+            info!("no point found at {:?}", pos);
             false
         }
     }

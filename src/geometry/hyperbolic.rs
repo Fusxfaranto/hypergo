@@ -24,14 +24,14 @@ impl Point for PointHyperbolic {
                }
                let a_h = to_hyperboloid(a);
                let b_h = to_hyperboloid(b);
-               //println!("a {:?} {:?}, b {:?} {:?}", a, a_h, b, b_h);
+               //info!("a {:?} {:?}, b {:?} {:?}", a, a_h, b, b_h);
                let bl = a_h.z * b_h.z - a_h.x * b_h.x - a_h.y * b_h.y;
         */
 
         let bl = self.w * b.w - self.x * b.x - self.y * b.y;
         assert_gt!(bl, 0.99);
         let d = bl.max(1.0).acosh();
-        //println!("d {d}");
+        //info!("d {d}");
         d
     }
 

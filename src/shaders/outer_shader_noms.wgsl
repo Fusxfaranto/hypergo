@@ -1,6 +1,9 @@
 @group(0) @binding(0)
-var render_target_tex: texture_multisampled_2d<f32>;
+var render_target_tex: texture_2d<f32>;
 
+
+// TODO should probably just use the plan sampler here
+// TODO dedupe more?
 @fragment
 fn fs_main(in: RenderTargetVertexOutput) -> @location(0) vec4f {
     let mag2 = dot(in.coords, in.coords);
@@ -46,17 +49,9 @@ fn fs_main(in: RenderTargetVertexOutput) -> @location(0) vec4f {
     let w_highlow = pixelcoords_frac.x * (1 - pixelcoords_frac.y) * f32(mag2_highlow < mag2_thresh);
     let w_high = pixelcoords_frac.x * pixelcoords_frac.y * f32(mag2_high < mag2_thresh);
 
-    // TODO weighting subsamples based on their location would be nice, but what's the pattern?
-    // https://mynameismjp.wordpress.com/2010/07/07/msaa-sample-pattern-detector/
-    var tex_out = vec4f(0);
-    let sample_count = i32(textureNumSamples(render_target_tex));
-    for (var i: i32 = 0; i < sample_count; i += 1) {
-        tex_out = tex_out //+ textureLoad(render_target_tex, ucoords_high, i);
-            + w_low * textureLoad(render_target_tex, ucoords_low, i)
-            + w_lowhigh * textureLoad(render_target_tex, ucoords_lowhigh, i)
-            + w_highlow * textureLoad(render_target_tex, ucoords_highlow, i)
-            + w_high * textureLoad(render_target_tex, ucoords_high, i);
-    }
-
-    return tex_out / (f32(sample_count) * (w_low + w_lowhigh + w_highlow + w_high));
+    return (w_low * textureLoad(render_target_tex, ucoords_low, 0)
+            + w_lowhigh * textureLoad(render_target_tex, ucoords_lowhigh, 0)
+            + w_highlow * textureLoad(render_target_tex, ucoords_highlow, 0)
+            + w_high * textureLoad(render_target_tex, ucoords_high, 0))
+            / (w_low + w_lowhigh + w_highlow + w_high);
 }

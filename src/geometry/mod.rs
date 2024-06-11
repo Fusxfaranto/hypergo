@@ -4,6 +4,7 @@ use std::ops;
 
 use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, Vector2};
 use cgmath::{InnerSpace, Vector3, Zero};
+use log::info;
 use wgpu::SurfaceConfiguration;
 
 pub mod euclidian;
@@ -155,8 +156,8 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
     }
 
     pub fn drag(&mut self, pos_from: SpinorT::Point, pos_to: SpinorT::Point) {
-        // println!("pos_from {:?}, pos_to {:?}", pos_from, pos_to);
-        // println!(
+        // info!("pos_from {:?}, pos_to {:?}", pos_from, pos_to);
+        // info!(
         //     "transformation {:?}",
         //     SpinorT::translation_to(pos_from) * SpinorT::translation_to(pos_to).reverse()
         // );
@@ -168,7 +169,7 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
             * SpinorT::translation_to(pos_to).reverse()
             * self.camera;
         self.camera.normalize();
-        //println!("camera {:?}", self.camera);
+        //info!("camera {:?}", self.camera);
     }
 
     pub fn update_floating_origin(&mut self) {
