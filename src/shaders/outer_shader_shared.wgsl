@@ -4,7 +4,8 @@ var render_target_sampler: sampler;
 struct Uniform {
     f: f32,
     skip_reprojection: u32,
-    padding: vec2u,
+    w_scale: f32,
+    h_scale: f32,
 };
 @group(1) @binding(0)
 var<uniform> uniform_params: Uniform;
@@ -22,7 +23,10 @@ struct RenderTargetVertexOutput {
 @vertex
 fn vs_main(in: RenderTargetVertexInput) -> RenderTargetVertexOutput {
     var out: RenderTargetVertexOutput;
-    out.clip_position = vec4f(in.coords, 0.0, 1.0);
+    out.clip_position = vec4f(
+        uniform_params.w_scale * in.coords.x,
+        uniform_params.h_scale * in.coords.y,
+        0.0, 1.0);
     out.coords = in.coords;
     return out;
 }

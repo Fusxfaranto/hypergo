@@ -8,11 +8,11 @@ use log::{info, LevelFilter};
 use web_time::Instant;
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use winit::{
-    dpi::{LogicalSize, PhysicalPosition},
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::*,
-    event_loop::EventLoop,
+    event_loop::{self, EventLoop, EventLoopBuilder},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowBuilder},
+    window::{Window, WindowAttributes},
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -58,7 +58,8 @@ impl RenderTargetVertex {
 struct OuterUniform {
     f: f32,
     skip_reprojection: u32,
-    padding: u64,
+    w_scale: f32,
+    h_scale: f32,
 }
 
 impl OuterUniform {
@@ -66,7 +67,8 @@ impl OuterUniform {
         Self {
             f: 1.0,
             skip_reprojection: cfg!(feature = "euclidian_geometry") as u32,
-            padding: 0,
+            w_scale: 1.0,
+            h_scale: 1.0,
         }
     }
 }
@@ -172,6 +174,25 @@ impl InputState {
     }
 }
 
+fn limit_surface_res(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
+    const MAX_RES: u32 = if cfg!(target_arch = "wasm32") {
+        1 << 11
+    } else {
+        1 << 15
+    };
+
+    let max_dim = size.width.max(size.height);
+
+    if max_dim <= MAX_RES {
+        size
+    } else {
+        PhysicalSize::<u32>::from_logical(
+            size.to_logical::<f64>(1.0),
+            MAX_RES as f64 / max_dim as f64,
+        )
+    }
+}
+
 struct State<'a, SpinorT: Spinor> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -213,6 +234,7 @@ struct State<'a, SpinorT: Spinor> {
 
     input_state: InputState,
     cursor_pos: SpinorT::Point,
+    cursor_pos_clipped: bool,
     view_state: ViewState<SpinorT>,
     game_state: GameState<SpinorT>,
     drag_from: Option<SpinorT::Point>,
@@ -280,11 +302,12 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+        let surface_size = limit_surface_res(size);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width,
-            height: size.height,
+            width: surface_size.width,
+            height: surface_size.height,
             //present_mode: surface_caps.present_modes[0],
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
@@ -471,7 +494,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -617,6 +640,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             window,
             input_state,
             cursor_pos: SpinorT::Point::zero(),
+            cursor_pos_clipped: true,
             view_state,
             game_state,
             drag_from: None,
@@ -631,9 +655,27 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
+            let surface_size = limit_surface_res(new_size);
+            self.config.width = surface_size.width;
+            self.config.height = surface_size.height;
             self.surface.configure(&self.device, &self.config);
+
+            // TODO skip for euclidian?
+            let ar = surface_size.width as f64 / surface_size.height as f64;
+            if ar > 1.0 {
+                self.view_state.w_scale = 1.0 / ar;
+                self.view_state.h_scale = 1.0;
+            } else {
+                self.view_state.w_scale = 1.0;
+                self.view_state.h_scale = ar;
+            }
+            self.outer_uniform.w_scale = self.view_state.w_scale as f32;
+            self.outer_uniform.h_scale = self.view_state.h_scale as f32;
+            self.queue.write_buffer(
+                &self.outer_uniform_buffer,
+                0,
+                bytemuck::cast_slice(&[self.outer_uniform]),
+            )
         }
     }
     /*
@@ -664,9 +706,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             // TODO doesn't quite work when camera moves without cursor moving
             // can i just fetch cursor position and/or force update?
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_pos =
-                    self.view_state
-                        .pixel_to_world_coords(&self.config, position.x, position.y);
+                //info!("{:?}", position);
+                (self.cursor_pos, self.cursor_pos_clipped) = self
+                    .view_state
+                    .pixel_to_world_coords(self.size, position.x, position.y);
                 true
             }
             WindowEvent::MouseInput {
@@ -675,7 +718,11 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 ..
             } => {
                 match *state {
-                    ElementState::Pressed => self.game_state.select_point(self.cursor_pos),
+                    ElementState::Pressed => {
+                        if !self.cursor_pos_clipped {
+                            self.game_state.select_point(self.cursor_pos)
+                        }
+                    }
                     ElementState::Released => (),
                 }
                 true
@@ -895,6 +942,11 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+struct CustomEvent {
+    size: LogicalSize<u32>,
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -903,37 +955,59 @@ pub async fn run() {
             console_log::init_with_level(log::Level::Info).expect("Couldn't initialize logger");
         } else {
             let mut log_builder = Builder::new();
-            //env_logger::init();
             log_builder.filter(Some("hypergo"), LevelFilter::Info).write_style(WriteStyle::Always).init();
         }
     }
 
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_inner_size(LogicalSize {
-            width: 1024,
-            height: 1024,
-        })
-        .with_title("hypergo")
-        .build(&event_loop)
+    let event_loop = EventLoop::<CustomEvent>::with_user_event().build().unwrap();
+    let window = event_loop
+        .create_window(
+            WindowAttributes::default()
+                .with_inner_size(LogicalSize {
+                    width: 1024,
+                    height: 1024,
+                })
+                .with_title("hypergo"),
+        )
         .unwrap();
 
     #[cfg(target_arch = "wasm32")]
     {
-        use winit::dpi::PhysicalSize;
-
+        use wasm_bindgen::closure::Closure;
         use winit::platform::web::WindowExtWebSys;
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("game-render")?;
-                let canvas = web_sys::Element::from(window.canvas()?);
-                dst.append_child(&canvas).ok()?;
-                Some(())
-            })
-            .expect("Couldn't append canvas to document body.");
 
-        let _ = window.request_inner_size(PhysicalSize::new(400, 400));
+        let web_window = web_sys::window().unwrap();
+        let dst = web_window
+            .document()
+            .unwrap()
+            .get_element_by_id("game-render")
+            .unwrap();
+        let canvas = web_sys::Element::from(window.canvas().unwrap());
+        dst.append_child(&canvas).ok().unwrap();
+
+        const SIZE_HACK: u32 = 3;
+        fn get_logical_size(web_window: &web_sys::Window) -> LogicalSize<u32> {
+            let width = web_window.inner_width().unwrap().as_f64().unwrap() as u32;
+            let height = web_window.inner_height().unwrap().as_f64().unwrap() as u32;
+            let min_dim = width.min(height);
+            LogicalSize::new(min_dim - SIZE_HACK, min_dim - SIZE_HACK)
+        }
+
+        let _ = window.request_inner_size(get_logical_size(&web_window));
+
+        let event_loop_proxy = event_loop.create_proxy();
+        let closure = Closure::wrap(Box::new(move |_web_event: web_sys::Event| {
+            let web_window = web_sys::window().unwrap();
+            event_loop_proxy
+                .send_event(CustomEvent {
+                    size: get_logical_size(&web_window),
+                })
+                .unwrap();
+        }) as Box<dyn FnMut(_)>);
+        web_window
+            .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+            .unwrap();
+        closure.forget();
     }
 
     #[cfg(feature = "euclidian_geometry")]
@@ -948,12 +1022,17 @@ pub async fn run() {
     let mut last_frame_time = Instant::now();
     let mut fps_ring = CircularBuffer::<4, f64>::new();
 
+    // TODO how is the non-deprecated version of this event loop supposed to work?
     event_loop
         .run(move |event, control_flow| match event {
             /*             Event::DeviceEvent {
                 event: DeviceEvent::MouseMotion { delta: (x, y) },
                 ..
             } => state.handle_mouse(x, y), */
+            Event::UserEvent(CustomEvent { size }) => {
+                let _ = state.window.request_inner_size(size);
+                info!("web resize event {:?}", size);
+            }
             Event::WindowEvent {
                 ref event,
                 window_id,
@@ -970,10 +1049,10 @@ pub async fn run() {
                                 },
                             ..
                         } => control_flow.exit(),
-                        WindowEvent::Resized(physical_size) => {
+                        WindowEvent::Resized(size) => {
                             surface_configured = true;
-                            state.resize(*physical_size);
-                            info!("resize event {:?}", *physical_size);
+                            state.resize(*size);
+                            info!("resize event {:?}", *size);
                         }
                         WindowEvent::RedrawRequested => {
                             state.window().request_redraw();

@@ -6,6 +6,7 @@ use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, 
 use cgmath::{InnerSpace, Vector3, Zero};
 use log::info;
 use wgpu::SurfaceConfiguration;
+use winit::dpi::PhysicalSize;
 
 pub mod euclidian;
 pub mod hyperbolic;
@@ -90,6 +91,8 @@ impl TilingParameters {
 pub struct ViewState<SpinorT: Spinor> {
     // scale for euclidian, poincare factor for hyperbolic
     pub projection_factor: f64,
+    pub w_scale: f64,
+    pub h_scale: f64,
     // TODO shouldn't need to be pub (testing things)
     pub camera: SpinorT,
     floating_origin: SpinorT,
@@ -100,21 +103,25 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
     pub fn new() -> Self {
         Self {
             projection_factor: 1.0,
+            w_scale: 1.0,
+            h_scale: 1.0,
             camera: SpinorT::one(),
             floating_origin: SpinorT::one(),
         }
     }
 
+    // TODO maybe store w/h in here?
     pub fn pixel_to_world_coords(
         &self,
-        config: &SurfaceConfiguration,
+        size: PhysicalSize<u32>,
         x: f64,
         y: f64,
-    ) -> SpinorT::Point {
+    ) -> (SpinorT::Point, bool) {
         let v = vec2(
-            2.0 * x / config.width as f64 - 1.0,
-            -2.0 * y / config.height as f64 + 1.0,
+            (2.0 * x / size.width as f64 - 1.0) / self.w_scale,
+            (-2.0 * y / size.height as f64 + 1.0) / self.h_scale,
         );
+        let mut clipped = false;
         let adjusted = if cfg!(feature = "euclidian_geometry") {
             (1.0 / self.projection_factor) * v
         } else {
@@ -123,6 +130,7 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
             let limited = if mag2 < LIMIT {
                 v
             } else {
+                clipped = true;
                 v * (LIMIT / mag2).sqrt()
             };
             let base = (0.5 * (1.0 + mag2.min(LIMIT))) * self.projection_factor + 1.0
@@ -130,7 +138,10 @@ impl<SpinorT: Spinor> ViewState<SpinorT> {
             limited / base
         };
 
-        self.camera.apply(SpinorT::Point::from_flat_vec(adjusted))
+        (
+            self.camera.apply(SpinorT::Point::from_flat_vec(adjusted)),
+            clipped,
+        )
     }
 
     pub fn adjust_projection_factor(&mut self, amt: f64) {
