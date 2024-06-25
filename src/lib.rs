@@ -218,12 +218,6 @@ impl TextRenderState {
         let mut buffer = glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
 
         buffer.set_size(&mut font_system, 1000.0, 1000.0);
-        buffer.set_text(
-            &mut font_system,
-            "testo",
-            glyphon::Attrs::new().family(glyphon::Family::SansSerif),
-            glyphon::Shaping::Advanced,
-        );
         buffer.shape_until_scroll(&mut font_system, false);
 
         TextRenderState {
@@ -238,10 +232,18 @@ impl TextRenderState {
 
     fn prepare(
         &mut self,
+        text: &str,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Result<(), glyphon::PrepareError> {
+        self.buffer.set_text(
+            &mut self.font_system,
+            text,
+            glyphon::Attrs::new().family(glyphon::Family::SansSerif),
+            glyphon::Shaping::Advanced,
+        );
+
         self.viewport.update(
             &queue,
             glyphon::Resolution {
@@ -261,12 +263,7 @@ impl TextRenderState {
                 left: 10.0,
                 top: 10.0,
                 scale: 1.0,
-                bounds: glyphon::TextBounds {
-                    left: 0,
-                    top: 0,
-                    right: 600,
-                    bottom: 160,
-                },
+                bounds: glyphon::TextBounds::default(),
                 default_color: glyphon::Color::rgb(255, 255, 255),
             }],
             &mut self.swash_cache,
@@ -331,6 +328,7 @@ struct State<'a, SpinorT: Spinor> {
     input_state: InputState,
     cursor_pos: SpinorT::Point,
     cursor_pos_clipped: bool,
+    hover_point_pos: Option<SpinorT::Point>,
     view_state: ViewState<SpinorT>,
     game_state: GameState<SpinorT>,
     drag_from: Option<SpinorT::Point>,
@@ -740,6 +738,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             input_state,
             cursor_pos: SpinorT::Point::zero(),
             cursor_pos_clipped: true,
+            hover_point_pos: None,
             view_state,
             game_state,
             drag_from: None,
@@ -809,6 +808,11 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 (self.cursor_pos, self.cursor_pos_clipped) = self
                     .view_state
                     .pixel_to_world_coords(self.size, position.x, position.y);
+                if self.cursor_pos_clipped {
+                    self.hover_point_pos = None;
+                } else {
+                    self.hover_point_pos = self.game_state.get_hover_point_pos(self.cursor_pos);
+                }
                 true
             }
             WindowEvent::MouseInput {
@@ -1014,8 +1018,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let text = format!("{:?}", self.hover_point_pos);
         self.text_render_state
-            .prepare(&self.device, &self.queue, &self.config)
+            .prepare(&text, &self.device, &self.queue, &self.config)
             .unwrap();
 
         let output = self.surface.get_current_texture()?;

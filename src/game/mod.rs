@@ -52,7 +52,6 @@ struct Board<SpinorT: Spinor> {
     points: Vec<BoardPoint<SpinorT>>,
     links: Vec<(i32, i32)>,
     tiling_parameters: TilingParameters,
-    //neighbor_directions: Vec<SpinorT>,
 }
 
 impl<SpinorT: Spinor> Board<SpinorT> {
@@ -73,7 +72,6 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             points: Vec::new(),
             links: Vec::new(),
             tiling_parameters,
-            //neighbor_directions: neighbor_directions.clone(),
         };
 
         let mut test_count = 1;
@@ -93,7 +91,6 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             for i in start_i..l {
                 for j in 0..neighbor_directions.len() {
                     let mut cur_transform = board.points[i].transform;
-                    //for &dir in (&neighbor_directions[0..1]).iter().cycle().skip(j) {
                     for (k, &dir) in neighbor_directions.iter().cycle().skip(j).enumerate() {
                         let link_reversed = (k % 2 == 1) ^ board.points[i].reversed;
                         cur_transform = if link_reversed {
@@ -156,7 +153,6 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             .iter()
             .chain(reverse_neighbor_directions.iter())
         {
-            //let i = self.find_point(dir.apply(point.pos), 0.1);
             let checking_pos = (point.transform * *dir).apply(SpinorT::Point::zero());
             info!("checking for neighbor at  {:?}", checking_pos);
             let i = self.find_point(checking_pos, 0.1);
@@ -203,7 +199,8 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let board = if cfg!(feature = "euclidian_geometry") {
             Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
         } else {
-            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
+            //Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
+            Board::make_board(TilingParameters::new::<SpinorT>(6, 5), 5)
         };
         Self {
             board,
@@ -278,6 +275,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
 
     fn try_select_point(&mut self, pos: SpinorT::Point) -> bool {
         // TODO radius is wrong, should be dynamic here
+        // (probably, but what it should actually match is the hover display radius)
         let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
             let point = &mut self.board.points[i as usize];
@@ -316,6 +314,16 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 Turn::White => Turn::Black,
             };
             self.needs_render = true;
+        }
+    }
+
+    pub fn get_hover_point_pos(&self, pos: SpinorT::Point) -> Option<SpinorT::Point> {
+        // TODO radius should be same as try_select_point
+        let i = self.board.find_point(pos, STONE_RADIUS as f64);
+        if i >= 0 {
+            Some(self.board.points[i as usize].pos)
+        } else {
+            None
         }
     }
 

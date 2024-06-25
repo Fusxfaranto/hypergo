@@ -121,7 +121,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_stone_instances(&self) -> Vec<Instance> {
         let mut instances = Vec::new();
 
-        let scale_mat = Matrix4::from_scale(self.board.tiling_parameters.distance as f32 * 0.9);
+        let scale_mat = Matrix4::from_scale(self.board.tiling_parameters.stone_scale as f32);
 
         let test_trans = SpinorT::translation(TEST_TRANS, 0.0);
 

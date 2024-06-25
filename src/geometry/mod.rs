@@ -69,8 +69,10 @@ pub struct TilingParameters {
     pub around_vertex: u32,
     pub angle: f64,
     pub distance: f64,
+
     // in flat coordinates
     pub link_len: f64,
+    pub stone_scale: f64,
 }
 
 impl TilingParameters {
@@ -78,12 +80,20 @@ impl TilingParameters {
         let angle = 2.0 * PI / (around_vertex as f64);
         let distance = SpinorT::tiling_get_distance(sides, angle);
         let link_len = SpinorT::distance_to_flat(distance);
+        // TODO find a value here that keeps stones in better scale
+        let stone_scale = SpinorT::distance_to_flat(distance)
+            * if cfg!(feature = "euclidian_geometry") {
+                1.0
+            } else {
+                1.5
+            };
         Self {
             sides,
             around_vertex,
             angle,
             distance,
             link_len,
+            stone_scale,
         }
     }
 }
