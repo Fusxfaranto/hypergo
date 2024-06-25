@@ -6,7 +6,7 @@ use clap::Parser;
 use env_logger::{Builder, WriteStyle};
 use log::{info, LevelFilter};
 use web_time::Instant;
-use wgpu::{util::DeviceExt, SurfaceConfiguration};
+use wgpu::{util::DeviceExt, SurfaceConfiguration, TextureFormat};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::*,
@@ -193,12 +193,108 @@ fn limit_surface_res(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
     }
 }
 
+struct TextRenderState {
+    font_system: glyphon::FontSystem,
+    swash_cache: glyphon::SwashCache,
+    viewport: glyphon::Viewport,
+    atlas: glyphon::TextAtlas,
+    text_renderer: glyphon::TextRenderer,
+    buffer: glyphon::Buffer,
+}
+
+impl TextRenderState {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, surface_format: TextureFormat) -> Self {
+        let mut font_system = glyphon::FontSystem::new();
+        let swash_cache = glyphon::SwashCache::new();
+        let cache = glyphon::Cache::new(&device);
+        let viewport = glyphon::Viewport::new(&device, &cache);
+        let mut atlas = glyphon::TextAtlas::new(&device, &queue, &cache, surface_format);
+        let text_renderer = glyphon::TextRenderer::new(
+            &mut atlas,
+            &device,
+            wgpu::MultisampleState::default(),
+            None,
+        );
+        let mut buffer = glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
+
+        buffer.set_size(&mut font_system, 1000.0, 1000.0);
+        buffer.set_text(
+            &mut font_system,
+            "testo",
+            glyphon::Attrs::new().family(glyphon::Family::SansSerif),
+            glyphon::Shaping::Advanced,
+        );
+        buffer.shape_until_scroll(&mut font_system, false);
+
+        TextRenderState {
+            font_system,
+            swash_cache,
+            viewport,
+            atlas,
+            text_renderer,
+            buffer,
+        }
+    }
+
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        config: &wgpu::SurfaceConfiguration,
+    ) -> Result<(), glyphon::PrepareError> {
+        self.viewport.update(
+            &queue,
+            glyphon::Resolution {
+                width: config.width,
+                height: config.height,
+            },
+        );
+
+        self.text_renderer.prepare(
+            &device,
+            &queue,
+            &mut self.font_system,
+            &mut self.atlas,
+            &self.viewport,
+            [glyphon::TextArea {
+                buffer: &self.buffer,
+                left: 10.0,
+                top: 10.0,
+                scale: 1.0,
+                bounds: glyphon::TextBounds {
+                    left: 0,
+                    top: 0,
+                    right: 600,
+                    bottom: 160,
+                },
+                default_color: glyphon::Color::rgb(255, 255, 255),
+            }],
+            &mut self.swash_cache,
+        )
+    }
+
+    fn render<'pass>(
+        &'pass self,
+        render_pass: &mut wgpu::RenderPass<'pass>,
+    ) -> Result<(), glyphon::RenderError> {
+        self.text_renderer
+            .render(&self.atlas, &self.viewport, render_pass)
+    }
+
+    // TODO this actually necessary?
+    fn post_render(&mut self) {
+        self.atlas.trim();
+    }
+}
+
 struct State<'a, SpinorT: Spinor> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
+
+    text_render_state: TextRenderState,
 
     outer_render_pipeline: wgpu::RenderPipeline,
     outer_uniform: OuterUniform,
@@ -314,6 +410,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
+
+        let text_render_state = TextRenderState::new(&device, &queue, surface_format);
 
         let uniform = Uniform::new();
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -615,6 +713,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             queue,
             config,
             size,
+            text_render_state,
             outer_render_pipeline,
             outer_uniform,
             outer_uniform_buffer,
@@ -884,9 +983,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         );
     }
 
-    fn render_transformed(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+    fn render_outer(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("render_pass"),
+            label: Some("outer_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
@@ -910,9 +1009,15 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         render_pass.set_bind_group(1, &self.outer_uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.render_target_vertex_buffer.slice(..));
         render_pass.draw(0..RENDER_TARGET_VERTS.len() as _, 0..1);
+
+        self.text_render_state.render(&mut render_pass).unwrap();
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.text_render_state
+            .prepare(&self.device, &self.queue, &self.config)
+            .unwrap();
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -932,11 +1037,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("encoder"),
             });
-        self.render_transformed(&mut encoder, &view);
+        self.render_outer(&mut encoder, &view);
         commands.push(encoder.finish());
 
         self.queue.submit(commands);
         output.present();
+
+        self.text_render_state.post_render();
 
         Ok(())
     }

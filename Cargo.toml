@@ -16,6 +16,7 @@ more-asserts = "0.3"
 circular-buffer = "0.1.7"
 clap = { version = "4.5.6", features = ["derive"] }
 web-time = "1.1.0"
+glyphon = { git = "https://github.com/grovesNL/glyphon.git" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
