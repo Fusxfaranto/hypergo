@@ -108,6 +108,13 @@ impl Spinor for SpinorEuclidian {
         self.s * self.s + self.xy * self.xy
     }
 
+    fn distance(self, b: Self) -> f64 {
+        // TODO fast version
+        let p = self.apply(Point::zero());
+        let q = b.apply(Point::zero());
+        p.distance(q)
+    }
+
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
     where
         f32: AsPrimitive<S>,

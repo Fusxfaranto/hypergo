@@ -823,7 +823,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 };
                 self.hover_point_pos_idx = self.game_state.check_hover_point(checking_pos);
                 if self.hover_point_pos_idx != last_hover_point_pos_idx {
-                    self.update_floating_origin();
+                    self.game_state.needs_render = true;
                 }
                 true
             }
@@ -890,14 +890,6 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
     }
 
-    fn update_floating_origin(&mut self) {
-        self.view_state.update_floating_origin();
-        self.game_state
-            .update_floating_origin(&self.view_state.camera.reverse());
-
-        self.game_state.needs_render = true;
-    }
-
     fn update(&mut self) {
         self.frame_count += 1;
         const FPS_FAC: u64 = 10;
@@ -934,9 +926,17 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             }
         }
 
-        // TODO base on distance
-        if self.frame_count % 11 == 0 {
-            self.update_floating_origin();
+        if self
+            .view_state
+            .camera
+            .distance(self.view_state.floating_origin)
+            > 2.0
+        {
+            self.view_state.update_floating_origin();
+            self.game_state
+                .update_floating_origin(&self.view_state.camera.reverse());
+
+            self.game_state.needs_render = true;
         }
 
         self.uniform.transform = self.view_state.get_camera_mat().into();
@@ -1053,6 +1053,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             avg_fps /= self.fps_ring.len() as f64;
 
             let camera_pos = self.view_state.camera.apply(SpinorT::Point::zero());
+            let floating_origin_pos = self
+                .view_state
+                .floating_origin
+                .apply(SpinorT::Point::zero());
 
             let hover_display = if let Some((pos, idx)) = self.hover_point_pos_idx {
                 format!("\nhovering over {:.2?} ({:})", pos, idx)
@@ -1061,8 +1065,8 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             };
 
             let text = format!(
-                "fps: {avg_fps:.2}\ncamera pos: {:.2?}{:}",
-                camera_pos, hover_display
+                "fps: {avg_fps:.2}\ncamera pos: {:.2?}\nfloating origin pos: {:.2?}{:}",
+                camera_pos, floating_origin_pos, hover_display
             );
             self.text_render_state
                 .prepare(&text, &self.device, &self.queue, &self.config)

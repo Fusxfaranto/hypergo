@@ -44,6 +44,7 @@ pub trait Spinor:
 
     fn reverse(&self) -> Self;
     fn magnitude2(&self) -> f64;
+    fn distance(self, b: Self) -> f64;
     fn apply(&self, v: Self::Point) -> Self::Point;
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
     where
@@ -105,7 +106,7 @@ pub struct ViewState<SpinorT: Spinor> {
     pub h_scale: f64,
     // TODO shouldn't need to be pub (testing things)
     pub camera: SpinorT,
-    floating_origin: SpinorT,
+    pub floating_origin: SpinorT,
 }
 
 // TODO lots of cfg! here, break some of it out into trait impls?

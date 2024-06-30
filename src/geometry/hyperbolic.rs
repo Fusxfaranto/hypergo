@@ -146,6 +146,47 @@ impl Spinor for SpinorHyperbolic {
         self.s * self.s + self.xy * self.xy - self.yw * self.yw - self.wx * self.wx
     }
 
+    fn distance(self, b: Self) -> f64 {
+        // TODO some math mistake here
+        /*
+        let bl: f64 = b.s.pow(2) * self.s.pow(2)
+            + b.xy.pow(2) * self.s.pow(2)
+            + b.yw.pow(2) * self.s.pow(2)
+            + b.xy.pow(2) * self.s.pow(2)
+            + b.s.pow(2) * self.xy.pow(2)
+            + b.xy.pow(2) * self.xy.pow(2)
+            + b.yw.pow(2) * self.xy.pow(2)
+            + b.xy.pow(2) * self.xy.pow(2)
+            - 4.0 * b.s * b.yw * self.s * self.yw
+            + 4.0 * b.xy * b.xy * self.s * self.yw
+            - 4.0 * b.xy * b.yw * self.xy * self.yw
+            - 4.0 * b.s * b.xy * self.xy * self.yw
+            + b.s.pow(2) * self.yw.pow(2)
+            + b.xy.pow(2) * self.yw.pow(2)
+            + b.yw.pow(2) * self.yw.pow(2)
+            + b.xy.pow(2) * self.yw.pow(2)
+            - 4.0 * b.xy * b.yw * self.s * self.wx
+            - 4.0 * b.s * b.xy * self.s * self.wx
+            + 4.0 * b.s * b.yw * self.xy * self.wx
+            - 4.0 * b.xy * b.xy * self.xy * self.wx
+            + b.s.pow(2) * self.wx.pow(2)
+            + b.xy.pow(2) * self.wx.pow(2)
+            + b.yw.pow(2) * self.wx.pow(2)
+            + b.xy.pow(2) * self.wx.pow(2);
+        assert_gt!(bl, 0.99);
+        let d = bl.max(1.0).acosh(); */
+        let alt_d = {
+            let p = self.apply(Point::zero());
+            let q = b.apply(Point::zero());
+            p.distance(q)
+        };
+        // println!("a: {:0.3?}, b: {:0.3?}", self, b);
+        // println!("d: {:0.3}, alt_d: {:0.3}", d, alt_d);
+        // assert_abs_diff_eq!(d, alt_d, epsilon = 1e-3);
+        // d
+        alt_d
+    }
+
     fn into_mat4<S: 'static + BaseFloat>(&self) -> Matrix4<S>
     where
         f32: AsPrimitive<S>,
