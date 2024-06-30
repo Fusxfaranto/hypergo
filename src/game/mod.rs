@@ -317,11 +317,11 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         }
     }
 
-    pub fn get_hover_point_pos(&self, pos: SpinorT::Point) -> Option<SpinorT::Point> {
+    pub fn get_hover_point_pos_idx(&self, pos: SpinorT::Point) -> Option<(SpinorT::Point, i32)> {
         // TODO radius should be same as try_select_point
         let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
-            Some(self.board.points[i as usize].pos)
+            Some((self.board.points[i as usize].pos, i))
         } else {
             None
         }

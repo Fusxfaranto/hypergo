@@ -325,10 +325,14 @@ struct State<'a, SpinorT: Spinor> {
 
     window: &'a Window,
 
+    frame_count: u64,
+    last_frame_time: Instant,
+    fps_ring: CircularBuffer<4, f64>,
+
     input_state: InputState,
     cursor_pos: SpinorT::Point,
     cursor_pos_clipped: bool,
-    hover_point_pos: Option<SpinorT::Point>,
+    hover_point_pos_idx: Option<(SpinorT::Point, i32)>,
     view_state: ViewState<SpinorT>,
     game_state: GameState<SpinorT>,
     drag_from: Option<SpinorT::Point>,
@@ -735,10 +739,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             uniform_buffer,
             uniform_bind_group,
             window,
+            frame_count: 0,
+            last_frame_time: Instant::now(),
+            fps_ring: CircularBuffer::<4, f64>::new(),
             input_state,
             cursor_pos: SpinorT::Point::zero(),
             cursor_pos_clipped: true,
-            hover_point_pos: None,
+            hover_point_pos_idx: None,
             view_state,
             game_state,
             drag_from: None,
@@ -809,9 +816,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     .view_state
                     .pixel_to_world_coords(self.size, position.x, position.y);
                 if self.cursor_pos_clipped {
-                    self.hover_point_pos = None;
+                    self.hover_point_pos_idx = None;
                 } else {
-                    self.hover_point_pos = self.game_state.get_hover_point_pos(self.cursor_pos);
+                    self.hover_point_pos_idx =
+                        self.game_state.get_hover_point_pos_idx(self.cursor_pos);
                 }
                 true
             }
@@ -878,7 +886,17 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
     }
 
-    fn update(&mut self, frame_count: i32) {
+    fn update(&mut self) {
+        self.frame_count += 1;
+        const FPS_FAC: u64 = 10;
+        if self.frame_count % FPS_FAC == 0 {
+            self.fps_ring.push_back(
+                (FPS_FAC as f64) / (Instant::now() - self.last_frame_time).as_secs_f64(),
+            );
+
+            self.last_frame_time = Instant::now();
+        }
+
         const SPEED: f64 = 0.1;
         if self.input_state.back {
             self.view_state.translate(SPEED, PI);
@@ -904,7 +922,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             }
         }
 
-        if frame_count % 11 == 0 {
+        if self.frame_count % 11 == 0 {
             self.view_state.update_floating_origin();
             self.game_state
                 .update_floating_origin(&self.view_state.camera.reverse());
@@ -1018,10 +1036,29 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let text = format!("{:?}", self.hover_point_pos);
-        self.text_render_state
-            .prepare(&text, &self.device, &self.queue, &self.config)
-            .unwrap();
+        {
+            let mut avg_fps = 0.0;
+            for &fps in self.fps_ring.iter() {
+                avg_fps += fps;
+            }
+            avg_fps /= self.fps_ring.len() as f64;
+
+            let camera_pos = self.view_state.camera.apply(SpinorT::Point::zero());
+
+            let hover_display = if let Some((pos, idx)) = self.hover_point_pos_idx {
+                format!("\nhovering over {:.2?} ({:})", pos, idx)
+            } else {
+                "".into()
+            };
+
+            let text = format!(
+                "fps: {avg_fps:.2}\ncamera pos: {:.2?}{:}",
+                camera_pos, hover_display
+            );
+            self.text_render_state
+                .prepare(&text, &self.device, &self.queue, &self.config)
+                .unwrap();
+        }
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -1130,10 +1167,6 @@ pub async fn run() {
     let mut state = State::<SpinorT>::new(&window).await;
     let mut surface_configured = false;
 
-    let mut frame_count = 0;
-    let mut last_frame_time = Instant::now();
-    let mut fps_ring = CircularBuffer::<4, f64>::new();
-
     // TODO how is the non-deprecated version of this event loop supposed to work?
     event_loop
         .run(move |event, control_flow| match event {
@@ -1173,7 +1206,7 @@ pub async fn run() {
                                 return;
                             }
 
-                            state.update(frame_count);
+                            state.update();
                             match state.render() {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -1185,28 +1218,6 @@ pub async fn run() {
                                 }
                                 Err(wgpu::SurfaceError::Timeout) => {
                                     log::warn!("Surface timeout")
-                                }
-                            }
-                            frame_count += 1;
-                            const FPS_FAC: i32 = 10;
-                            if frame_count % FPS_FAC == 0 {
-                                fps_ring.push_back(
-                                    (FPS_FAC as f64)
-                                        / (Instant::now() - last_frame_time).as_secs_f64(),
-                                );
-
-                                last_frame_time = Instant::now();
-                            }
-
-                            if frame_count % 60 == 0 {
-                                let mut avg_fps = 0.0;
-                                for &fps in fps_ring.iter() {
-                                    avg_fps += fps;
-                                }
-                                avg_fps /= fps_ring.len() as f64;
-                                // TODO text rendering
-                                if frame_count < 600 {
-                                    info!("fps: {avg_fps}");
                                 }
                             }
                         }
