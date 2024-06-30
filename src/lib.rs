@@ -815,11 +815,15 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 (self.cursor_pos, self.cursor_pos_clipped) = self
                     .view_state
                     .pixel_to_world_coords(self.size, position.x, position.y);
-                if self.cursor_pos_clipped {
-                    self.hover_point_pos_idx = None;
+                let last_hover_point_pos_idx = self.hover_point_pos_idx;
+                let checking_pos = if self.cursor_pos_clipped {
+                    None
                 } else {
-                    self.hover_point_pos_idx =
-                        self.game_state.get_hover_point_pos_idx(self.cursor_pos);
+                    Some(self.cursor_pos)
+                };
+                self.hover_point_pos_idx = self.game_state.check_hover_point(checking_pos);
+                if self.hover_point_pos_idx != last_hover_point_pos_idx {
+                    self.update_floating_origin();
                 }
                 true
             }
@@ -886,6 +890,14 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
     }
 
+    fn update_floating_origin(&mut self) {
+        self.view_state.update_floating_origin();
+        self.game_state
+            .update_floating_origin(&self.view_state.camera.reverse());
+
+        self.game_state.needs_render = true;
+    }
+
     fn update(&mut self) {
         self.frame_count += 1;
         const FPS_FAC: u64 = 10;
@@ -922,12 +934,9 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             }
         }
 
+        // TODO base on distance
         if self.frame_count % 11 == 0 {
-            self.view_state.update_floating_origin();
-            self.game_state
-                .update_floating_origin(&self.view_state.camera.reverse());
-
-            self.game_state.needs_render = true;
+            self.update_floating_origin();
         }
 
         self.uniform.transform = self.view_state.get_camera_mat().into();

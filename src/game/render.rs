@@ -127,7 +127,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
 
         for point in self.board.points.iter() {
             if point.ty == StoneType::Empty {
-                //continue;
+                continue;
             }
 
             instances.push(Instance {
@@ -141,6 +141,21 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             /*             if point.pos.distance(SpinorT::Point::zero()) > 10.1 {
                 info!("transform {:?}", instances.last().unwrap().transform);
             } */
+        }
+
+        if self.hover_idx >= 0 {
+            let hover_point = &self.board.points[self.hover_idx as usize];
+            if let StoneType::Empty = hover_point.ty {
+                instances.push(Instance {
+                    transform: ((test_trans * hover_point.relative_transform).into_mat4()
+                        * scale_mat)
+                        .into(),
+                    color: match self.turn {
+                        Turn::Black => [0.0, 0.0, 0.0, 0.5],
+                        Turn::White => [0.35, 0.35, 0.35, 0.4],
+                    },
+                });
+            }
         }
         instances
     }

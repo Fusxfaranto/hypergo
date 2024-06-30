@@ -191,6 +191,7 @@ enum Turn {
 pub struct GameState<SpinorT: Spinor> {
     board: Board<SpinorT>,
     turn: Turn,
+    pub hover_idx: i32,
     pub needs_render: bool,
 }
 
@@ -205,6 +206,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         Self {
             board,
             turn: Turn::Black,
+            hover_idx: -1,
             needs_render: true,
         }
     }
@@ -317,12 +319,23 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         }
     }
 
-    pub fn get_hover_point_pos_idx(&self, pos: SpinorT::Point) -> Option<(SpinorT::Point, i32)> {
-        // TODO radius should be same as try_select_point
-        let i = self.board.find_point(pos, STONE_RADIUS as f64);
-        if i >= 0 {
-            Some((self.board.points[i as usize].pos, i))
+    pub fn check_hover_point(
+        &mut self,
+        maybe_pos: Option<SpinorT::Point>,
+    ) -> Option<(SpinorT::Point, i32)> {
+        if let Some(pos) = maybe_pos {
+            // TODO radius should be same as try_select_point
+            self.hover_idx = self.board.find_point(pos, STONE_RADIUS as f64);
+            if self.hover_idx >= 0 {
+                Some((
+                    self.board.points[self.hover_idx as usize].pos,
+                    self.hover_idx,
+                ))
+            } else {
+                None
+            }
         } else {
+            self.hover_idx = -1;
             None
         }
     }
