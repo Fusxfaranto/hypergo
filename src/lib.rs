@@ -142,19 +142,19 @@ impl InputState {
             } => {
                 let is_pressed = *state == ElementState::Pressed;
                 match keycode {
-                    KeyCode::KeyW | KeyCode::ArrowUp => {
+                    KeyCode::KeyW => {
                         self.forward = is_pressed;
                         true
                     }
-                    KeyCode::KeyA | KeyCode::ArrowLeft => {
+                    KeyCode::KeyA => {
                         self.left = is_pressed;
                         true
                     }
-                    KeyCode::KeyS | KeyCode::ArrowDown => {
+                    KeyCode::KeyS => {
                         self.back = is_pressed;
                         true
                     }
-                    KeyCode::KeyD | KeyCode::ArrowRight => {
+                    KeyCode::KeyD => {
                         self.right = is_pressed;
                         true
                     }
@@ -199,7 +199,8 @@ struct TextRenderState {
     viewport: glyphon::Viewport,
     atlas: glyphon::TextAtlas,
     text_renderer: glyphon::TextRenderer,
-    buffer: glyphon::Buffer,
+    buffer_left: glyphon::Buffer,
+    buffer_right: glyphon::Buffer,
 }
 
 impl TextRenderState {
@@ -215,10 +216,16 @@ impl TextRenderState {
             wgpu::MultisampleState::default(),
             None,
         );
-        let mut buffer = glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
+        let mut buffer_left =
+            glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
 
-        buffer.set_size(&mut font_system, 1000.0, 1000.0);
-        buffer.shape_until_scroll(&mut font_system, false);
+        buffer_left.set_size(&mut font_system, 1000.0, 1000.0);
+        buffer_left.shape_until_scroll(&mut font_system, false);
+
+        let mut buffer_right =
+            glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
+        buffer_right.set_size(&mut font_system, 150.0, 150.0);
+        buffer_right.shape_until_scroll(&mut font_system, false);
 
         TextRenderState {
             font_system,
@@ -226,23 +233,34 @@ impl TextRenderState {
             viewport,
             atlas,
             text_renderer,
-            buffer,
+            buffer_left,
+            buffer_right,
         }
     }
 
     fn prepare(
         &mut self,
-        text: &str,
+        text_left: &str,
+        text_right: &str,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Result<(), glyphon::PrepareError> {
-        self.buffer.set_text(
+        let attrs = glyphon::Attrs::new().family(glyphon::Family::SansSerif);
+        self.buffer_left.set_text(
             &mut self.font_system,
-            text,
-            glyphon::Attrs::new().family(glyphon::Family::SansSerif),
+            text_left,
+            attrs,
             glyphon::Shaping::Advanced,
         );
+        self.buffer_right.set_text(
+            &mut self.font_system,
+            text_right,
+            attrs,
+            glyphon::Shaping::Advanced,
+        );
+        // TODO doesn't seem to render anything when setting this?
+        //self.buffer_right.lines[0].set_align(Some(glyphon::cosmic_text::Align::Right));
 
         self.viewport.update(
             &queue,
@@ -258,14 +276,24 @@ impl TextRenderState {
             &mut self.font_system,
             &mut self.atlas,
             &self.viewport,
-            [glyphon::TextArea {
-                buffer: &self.buffer,
-                left: 10.0,
-                top: 10.0,
-                scale: 1.0,
-                bounds: glyphon::TextBounds::default(),
-                default_color: glyphon::Color::rgb(255, 255, 255),
-            }],
+            [
+                glyphon::TextArea {
+                    buffer: &self.buffer_left,
+                    left: 10.0,
+                    top: 10.0,
+                    scale: 1.0,
+                    bounds: glyphon::TextBounds::default(),
+                    default_color: glyphon::Color::rgb(255, 255, 255),
+                },
+                glyphon::TextArea {
+                    buffer: &self.buffer_right,
+                    left: config.width as f32 - 150.0,
+                    top: 10.0,
+                    scale: 1.0,
+                    bounds: glyphon::TextBounds::default(),
+                    default_color: glyphon::Color::rgb(255, 255, 255),
+                },
+            ],
             &mut self.swash_cache,
         )
     }
@@ -861,31 +889,25 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                 event:
                     KeyEvent {
                         state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::KeyR),
+                        physical_key: PhysicalKey::Code(keycode),
                         ..
                     },
                 ..
-            } => {
-                self.view_state.reset_camera();
-                true
-            }
-            /*             WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::KeyT),
-                        ..
-                    },
-                ..
-            } => {
-                self.view_state.camera = SpinorT::new(
-                    1.3090169943749472,
-                    -0.42532540417601966,
-                    0.5558929702514209,
-                    -0.7651210339710757,
-                );
-                true
-            } */
+            } => match keycode {
+                KeyCode::KeyR => {
+                    self.view_state.reset_camera();
+                    true
+                }
+                KeyCode::ArrowLeft => {
+                    self.game_state.move_history(-1);
+                    true
+                }
+                KeyCode::ArrowRight => {
+                    self.game_state.move_history(1);
+                    true
+                }
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -935,8 +957,6 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             self.view_state.update_floating_origin();
             self.game_state
                 .update_floating_origin(&self.view_state.camera.reverse());
-
-            self.game_state.needs_render = true;
         }
 
         self.uniform.transform = self.view_state.get_camera_mat().into();
@@ -1044,34 +1064,43 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         self.text_render_state.render(&mut render_pass).unwrap();
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        {
-            let mut avg_fps = 0.0;
-            for &fps in self.fps_ring.iter() {
-                avg_fps += fps;
-            }
-            avg_fps /= self.fps_ring.len() as f64;
-
-            let camera_pos = self.view_state.camera.apply(SpinorT::Point::zero());
-            let floating_origin_pos = self
-                .view_state
-                .floating_origin
-                .apply(SpinorT::Point::zero());
-
-            let hover_display = if let Some((pos, idx)) = self.hover_point_pos_idx {
-                format!("\nhovering over {:.2?} ({:})", pos, idx)
-            } else {
-                "".into()
-            };
-
-            let text = format!(
-                "fps: {avg_fps:.2}\ncamera pos: {:.2?}\nfloating origin pos: {:.2?}{:}",
-                camera_pos, floating_origin_pos, hover_display
-            );
-            self.text_render_state
-                .prepare(&text, &self.device, &self.queue, &self.config)
-                .unwrap();
+    fn prepare_text(&mut self) -> Result<(), glyphon::PrepareError> {
+        let mut avg_fps = 0.0;
+        for &fps in self.fps_ring.iter() {
+            avg_fps += fps;
         }
+        avg_fps /= self.fps_ring.len() as f64;
+
+        let camera_pos = self.view_state.camera.apply(SpinorT::Point::zero());
+        // let floating_origin_pos = self
+        //     .view_state
+        //     .floating_origin
+        //     .apply(SpinorT::Point::zero());
+
+        let hover_display = if let Some((pos, idx)) = self.hover_point_pos_idx {
+            format!("\nhovering over {:.2?} ({:})", pos, idx)
+        } else {
+            "".into()
+        };
+
+        let left_text = format!(
+            "fps: {avg_fps:.2}\ncamera pos: {:.2?}{:}",
+            camera_pos, hover_display
+        );
+
+        let right_text = format!("turn {:}", self.game_state.get_turn_count());
+
+        self.text_render_state.prepare(
+            &left_text,
+            &right_text,
+            &self.device,
+            &self.queue,
+            &self.config,
+        )
+    }
+
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.prepare_text().unwrap();
 
         let output = self.surface.get_current_texture()?;
         let view = output

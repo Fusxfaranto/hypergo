@@ -4,6 +4,7 @@ use cgmath::{abs_diff_eq, relative_eq, MetricSpace, Vector2, Zero};
 use log::info;
 
 pub mod render;
+use more_asserts::assert_ge;
 use render::*;
 
 use crate::geometry::*;
@@ -31,7 +32,7 @@ impl<T> Iterator for PanicIterator<T> {
 pub const MAX_STONES: u64 = 1024 * 16;
 pub const STONE_RADIUS: f64 = 0.4;
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum StoneType {
     Empty,
     Black,
@@ -51,6 +52,10 @@ struct BoardPoint<SpinorT: Spinor> {
 struct Board<SpinorT: Spinor> {
     points: Vec<BoardPoint<SpinorT>>,
     links: Vec<(i32, i32)>,
+    // TODO consider a delta history rather than copies
+    // also consider a packed board representation
+    history: Vec<Vec<StoneType>>,
+    history_idx: i32,
     tiling_parameters: TilingParameters,
 }
 
@@ -71,6 +76,8 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         let mut board = Self {
             points: Vec::new(),
             links: Vec::new(),
+            history: Vec::new(),
+            history_idx: 0,
             tiling_parameters,
         };
 
@@ -123,6 +130,10 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             }
             start_i = l;
         }
+
+        board
+            .history
+            .push(vec![StoneType::Empty; board.points.len()]);
 
         board
     }
@@ -181,6 +192,24 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             point.relative_transform = *camera_r * point.transform;
         }
     }
+
+    fn save_move(&mut self) {
+        self.history_idx += 1;
+        self.history.truncate(self.history_idx as usize);
+        self.history
+            .push(self.points.iter_mut().map(|p| p.ty).collect());
+    }
+
+    fn move_history(&mut self, offset: i32) {
+        self.history_idx += offset;
+        if self.history_idx < 0 || self.history_idx >= self.history.len() as i32 {
+            self.history_idx -= offset;
+            return;
+        }
+        for (i, p) in self.points.iter_mut().enumerate() {
+            p.ty = self.history[self.history_idx as usize][i];
+        }
+    }
 }
 
 enum Turn {
@@ -200,8 +229,8 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let board = if cfg!(feature = "euclidian_geometry") {
             Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
         } else {
-            //Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
-            Board::make_board(TilingParameters::new::<SpinorT>(6, 5), 5)
+            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
+            //Board::make_board(TilingParameters::new::<SpinorT>(6, 5), 5)
         };
         Self {
             board,
@@ -299,6 +328,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                             return false;
                         }
                     }
+                    self.board.save_move();
                     true
                 }
                 _ => false,
@@ -342,5 +372,15 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
 
     pub fn update_floating_origin(&mut self, camera_r: &SpinorT) {
         self.board.update_floating_origin(camera_r);
+        self.needs_render = true;
+    }
+
+    pub fn move_history(&mut self, offset: i32) {
+        self.board.move_history(offset);
+        self.needs_render = true;
+    }
+
+    pub fn get_turn_count(&self) -> i32 {
+        self.board.history_idx + 1
     }
 }
