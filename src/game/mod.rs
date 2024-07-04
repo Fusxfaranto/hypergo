@@ -138,8 +138,6 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         board
     }
 
-    // TODO shouldn't need to check (non-)reverse neighbors on every point, be smarter
-    // TODO currently seems to double-add neigbors, fix that too
     fn add_point(
         &mut self,
         neighbor_directions: &Vec<SpinorT>,
@@ -160,10 +158,11 @@ impl<SpinorT: Spinor> Board<SpinorT> {
         info!("adding point {:?} at {:?}", self.points.len(), point.pos);
         info!("with transform {:?}", transform);
         // not the best approach
-        for dir in neighbor_directions
-            .iter()
-            .chain(reverse_neighbor_directions.iter())
-        {
+        for dir in if reversed {
+            reverse_neighbor_directions.iter()
+        } else {
+            neighbor_directions.iter()
+        } {
             let checking_pos = (point.transform * *dir).apply(SpinorT::Point::zero());
             info!("checking for neighbor at  {:?}", checking_pos);
             let i = self.find_point(checking_pos, 0.1);
@@ -229,8 +228,8 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let board = if cfg!(feature = "euclidian_geometry") {
             Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
         } else {
-            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
-            //Board::make_board(TilingParameters::new::<SpinorT>(6, 5), 5)
+            //Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
+            Board::make_board(TilingParameters::new::<SpinorT>(5, 5), 5)
         };
         Self {
             board,
@@ -306,7 +305,6 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
 
     fn try_select_point(&mut self, pos: SpinorT::Point) -> bool {
         // TODO radius is wrong, should be dynamic here
-        // (probably, but what it should actually match is the hover display radius)
         let i = self.board.find_point(pos, STONE_RADIUS as f64);
         if i >= 0 {
             let point = &mut self.board.points[i as usize];
