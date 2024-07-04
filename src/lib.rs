@@ -906,6 +906,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     self.game_state.move_history(1);
                     true
                 }
+                KeyCode::KeyT => {
+                    self.game_state.calculate_score();
+                    true
+                }
                 _ => false,
             },
             _ => false,
@@ -1088,7 +1092,20 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             camera_pos, hover_display
         );
 
-        let right_text = format!("turn {:}", self.game_state.get_turn_count());
+        let score_display = if let Some(score) = &self.game_state.score {
+            format!(
+                "\nblack: {:}\nwhite: {:}",
+                score.black_score, score.white_score
+            )
+        } else {
+            "".into()
+        };
+
+        let right_text = format!(
+            "turn {:}{:}",
+            self.game_state.get_turn_count(),
+            score_display
+        );
 
         self.text_render_state.prepare(
             &left_text,

@@ -143,6 +143,30 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             } */
         }
 
+        if let Some(score) = &self.score {
+            let territory_scale_mat =
+                Matrix4::from_scale(0.3 * self.board.tiling_parameters.stone_scale as f32);
+
+            for (i, point) in self.board.points.iter().enumerate() {
+                if point.ty == StoneType::Empty {
+                    if score.territory[i] == StoneType::Empty {
+                        continue;
+                    }
+
+                    instances.push(Instance {
+                        transform: ((test_trans * point.relative_transform).into_mat4()
+                            * territory_scale_mat)
+                            .into(),
+                        color: match score.territory[i] {
+                            StoneType::Empty => [0.0, 0.2, 0.0, 0.2],
+                            StoneType::Black => [0.0, 0.0, 0.0, 0.5],
+                            StoneType::White => [0.35, 0.35, 0.35, 0.4],
+                        },
+                    });
+                }
+            }
+        }
+
         if self.hover_idx >= 0 {
             let hover_point = &self.board.points[self.hover_idx as usize];
             if let StoneType::Empty = hover_point.ty {

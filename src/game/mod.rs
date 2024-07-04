@@ -49,11 +49,18 @@ struct BoardPoint<SpinorT: Spinor> {
     reversed: bool,
 }
 
+pub struct ScoreState {
+    territory: Vec<StoneType>,
+    pub black_score: i32,
+    pub white_score: i32,
+}
+
 struct Board<SpinorT: Spinor> {
     points: Vec<BoardPoint<SpinorT>>,
     links: Vec<(i32, i32)>,
     // TODO consider a delta history rather than copies
     // also consider a packed board representation
+    // also see "zobrist hashing"
     history: Vec<Vec<StoneType>>,
     history_idx: i32,
     tiling_parameters: TilingParameters,
@@ -229,6 +236,8 @@ pub struct GameState<SpinorT: Spinor> {
     turn: Turn,
     pub hover_idx: i32,
     pub needs_render: bool,
+
+    pub score: Option<ScoreState>,
 }
 
 impl<SpinorT: Spinor> GameState<SpinorT> {
@@ -244,6 +253,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             turn: Turn::Black,
             hover_idx: -1,
             needs_render: true,
+            score: None,
         }
     }
 
@@ -357,6 +367,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 Turn::Black => Turn::White,
                 Turn::White => Turn::Black,
             };
+            self.score = None;
             self.needs_render = true;
         }
     }
@@ -389,10 +400,85 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
 
     pub fn move_history(&mut self, offset: i32) {
         self.board.move_history(offset);
+        self.score = None;
         self.needs_render = true;
     }
 
     pub fn get_turn_count(&self) -> i32 {
         self.board.history_idx + 1
+    }
+
+    // TODO consider dead stone removal
+    pub fn calculate_score(&mut self) {
+        let mut territory = self.board.history[self.board.history_idx as usize].clone();
+
+        let mut checked = vec![false; self.board.points.len()];
+
+        for start_idx in 0..self.board.points.len() as i32 {
+            if checked[start_idx as usize]
+                || self.board.points[start_idx as usize].ty != StoneType::Empty
+            {
+                continue;
+            }
+
+            let mut borders_black = false;
+            let mut borders_white = false;
+            let mut region_idxs = vec![start_idx];
+            let mut search_stack = vec![start_idx];
+
+            while let Some(i) = search_stack.pop() {
+                let point = &self.board.points[i as usize];
+                match point.ty {
+                    StoneType::Empty => {
+                        if checked[i as usize] {
+                            continue;
+                        }
+                        checked[i as usize] = true;
+                        search_stack.extend(point.neighbors.iter());
+                        region_idxs.push(i);
+                    }
+                    StoneType::Black => {
+                        borders_black = true;
+                    }
+                    StoneType::White => {
+                        borders_white = true;
+                    }
+                }
+            }
+
+            let territory_ty = if borders_black && !borders_white {
+                StoneType::Black
+            } else if borders_white && !borders_black {
+                StoneType::White
+            } else {
+                StoneType::Empty
+            };
+            if territory_ty != StoneType::Empty {
+                for i in region_idxs {
+                    territory[i as usize] = territory_ty;
+                }
+            }
+        }
+
+        let mut black_score = 0;
+        let mut white_score = 0;
+        for ty in &territory {
+            match ty {
+                StoneType::Empty => {}
+                StoneType::Black => {
+                    black_score += 1;
+                }
+                StoneType::White => {
+                    white_score += 1;
+                }
+            }
+        }
+
+        self.score = Some(ScoreState {
+            territory,
+            black_score,
+            white_score,
+        });
+        self.needs_render = true;
     }
 }
