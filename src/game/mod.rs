@@ -209,6 +209,14 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             p.ty = self.history[self.history_idx as usize][i];
         }
     }
+
+    // TODO superko?
+    fn last_move_is_ko(&self) -> bool {
+        if self.history_idx < 2 {
+            return false;
+        }
+        self.history[self.history_idx as usize] == self.history[self.history_idx as usize - 2]
+    }
 }
 
 enum Turn {
@@ -228,8 +236,8 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         let board = if cfg!(feature = "euclidian_geometry") {
             Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
         } else {
-            //Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
-            Board::make_board(TilingParameters::new::<SpinorT>(5, 5), 5)
+            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
+            //Board::make_board(TilingParameters::new::<SpinorT>(5, 5), 5)
         };
         Self {
             board,
@@ -253,6 +261,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                 continue;
             }
             let mut search_stack = vec![*start_idx];
+            // TODO associative map?
             let mut checked_idxs = vec![];
 
             while let Some(i) = search_stack.pop() {
@@ -327,6 +336,11 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                         }
                     }
                     self.board.save_move();
+                    if self.board.last_move_is_ko() {
+                        info!("ko");
+                        self.move_history(-1);
+                        return false;
+                    }
                     true
                 }
                 _ => false,
