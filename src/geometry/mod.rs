@@ -1,5 +1,5 @@
 use std::f64::consts::PI;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::ops;
 
 use cgmath::{num_traits::AsPrimitive, vec2, AbsDiffEq, BaseFloat, Matrix4, One, Vector2};
@@ -11,7 +11,8 @@ use winit::dpi::PhysicalSize;
 pub mod euclidian;
 pub mod hyperbolic;
 
-pub trait Point: Copy + Clone + Debug + PartialEq + AbsDiffEq // + ops::Mul<f64, Output = Self>
+pub trait Point: Copy + Clone + Debug + Display + PartialEq + AbsDiffEq
+// + ops::Mul<f64, Output = Self>
 {
     fn distance(self, b: Self) -> f64;
 

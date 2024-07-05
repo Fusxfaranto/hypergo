@@ -1,4 +1,4 @@
-use std::{f64::consts::PI, ops};
+use std::{f64::consts::PI, fmt, ops};
 
 use cgmath::{assert_abs_diff_eq, vec2, vec3, vec4, Matrix, Matrix4, Vector2, Zero};
 
@@ -65,6 +65,13 @@ impl ops::Mul<f64> for PointEuclidian {
             x: rhs * self.x,
             y: rhs * self.y,
         }
+    }
+}
+
+impl Display for PointEuclidian {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let precision = f.precision().unwrap_or(3);
+        write!(f, "[{:.*?}, {:.*?}]", precision, self.x, precision, self.y)
     }
 }
 

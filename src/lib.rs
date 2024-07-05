@@ -193,6 +193,8 @@ fn limit_surface_res(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
     }
 }
 
+const FONT_BYTES: &[u8] = include_bytes!("../resource/NotoSans-Regular.ttf");
+
 struct TextRenderState {
     font_system: glyphon::FontSystem,
     swash_cache: glyphon::SwashCache,
@@ -206,6 +208,7 @@ struct TextRenderState {
 impl TextRenderState {
     fn new(device: &wgpu::Device, queue: &wgpu::Queue, surface_format: TextureFormat) -> Self {
         let mut font_system = glyphon::FontSystem::new();
+        font_system.db_mut().load_font_data(FONT_BYTES.to_vec());
         let swash_cache = glyphon::SwashCache::new();
         let cache = glyphon::Cache::new(&device);
         let viewport = glyphon::Viewport::new(&device, &cache);
@@ -219,7 +222,7 @@ impl TextRenderState {
         let mut buffer_left =
             glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
 
-        buffer_left.set_size(&mut font_system, 1000.0, 1000.0);
+        buffer_left.set_size(&mut font_system, 400.0, 800.0);
         buffer_left.shape_until_scroll(&mut font_system, false);
 
         let mut buffer_right =
@@ -1086,13 +1089,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         //     .apply(SpinorT::Point::zero());
 
         let hover_display = if let Some((pos, idx)) = self.hover_point_pos_idx {
-            format!("\nhovering over {:.2?} ({:})", pos, idx)
+            format!("\nhovering over {:.2} ({:})", pos, idx)
         } else {
             "".into()
         };
 
         let left_text = format!(
-            "fps: {avg_fps:.2}\ncamera pos: {:.2?}{:}",
+            "fps: {avg_fps:.2}\ncamera pos: {:.2}{:}",
             camera_pos, hover_display
         );
 
@@ -1201,8 +1204,7 @@ pub async fn run() {
         fn get_logical_size(web_window: &web_sys::Window) -> LogicalSize<u32> {
             let width = web_window.inner_width().unwrap().as_f64().unwrap() as u32;
             let height = web_window.inner_height().unwrap().as_f64().unwrap() as u32;
-            let min_dim = width.min(height);
-            LogicalSize::new(min_dim - SIZE_HACK, min_dim - SIZE_HACK)
+            LogicalSize::new(width - SIZE_HACK, height - SIZE_HACK)
         }
 
         let _ = window.request_inner_size(get_logical_size(&web_window));

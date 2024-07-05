@@ -1,3 +1,4 @@
+use std::fmt;
 use std::{f64::consts::PI, ops};
 
 use cgmath::{
@@ -99,6 +100,13 @@ impl ops::Mul<f64> for PointHyperbolic {
             y: rhs * self.y,
             w: rhs * self.w,
         }
+    }
+}
+
+impl Display for PointHyperbolic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let precision = f.precision().unwrap_or(3);
+        write!(f, "[{:.*?}, {:.*?}]", precision, self.x, precision, self.y)
     }
 }
 
