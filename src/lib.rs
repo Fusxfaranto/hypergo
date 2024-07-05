@@ -906,6 +906,10 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
                     self.game_state.move_history(1);
                     true
                 }
+                KeyCode::KeyP => {
+                    self.game_state.pass_move();
+                    true
+                }
                 KeyCode::KeyT => {
                     self.game_state.calculate_score();
                     true

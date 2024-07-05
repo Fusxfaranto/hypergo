@@ -372,6 +372,15 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
         }
     }
 
+    pub fn pass_move(&mut self) {
+        self.turn = match self.turn {
+            Turn::Black => Turn::White,
+            Turn::White => Turn::Black,
+        };
+        self.board.save_move();
+        self.needs_render = true;
+    }
+
     pub fn check_hover_point(
         &mut self,
         maybe_pos: Option<SpinorT::Point>,
