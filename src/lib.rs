@@ -315,10 +315,7 @@ impl TextRenderState {
     }
 }
 
-struct State<'a, SpinorT: Spinor> {
-    surface: wgpu::Surface<'a>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+struct State<SpinorT: Spinor> {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
 
@@ -354,8 +351,6 @@ struct State<'a, SpinorT: Spinor> {
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
 
-    window: &'a Window,
-
     frame_count: u64,
     last_frame_time: Instant,
     fps_ring: CircularBuffer<4, f64>,
@@ -370,8 +365,13 @@ struct State<'a, SpinorT: Spinor> {
     last_drag_pos: SpinorT::Point,
 }
 
-impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
-    async fn new(window: &'a Window) -> Self {
+impl<SpinorT: Spinor> State<SpinorT> {
+    fn new(
+        window: &Window,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        surface_caps: &wgpu::SurfaceCapabilities,
+    ) -> Self {
         let args = Args::parse();
 
         let ms_count = if cfg!(target_arch = "wasm32") {
@@ -387,50 +387,13 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
 
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            #[cfg(not(target_arch = "wasm32"))]
-            backends: wgpu::Backends::PRIMARY,
-            #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::GL,
-            ..Default::default()
-        });
-
-        let surface = instance.create_surface(window).unwrap();
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .unwrap();
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    // TODO presumably this can be made optional?
-                    //required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-                    required_features: wgpu::Features::default(),
-                    required_limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults()
-                    } else {
-                        wgpu::Limits::default()
-                    },
-                },
-                None,
-            )
-            .await
-            .unwrap();
-
-        let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
             .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+
         let surface_size = limit_surface_res(size);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -741,9 +704,6 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         });
 
         Self {
-            surface,
-            device,
-            queue,
             config,
             size,
             text_render_state,
@@ -769,7 +729,6 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             uniform,
             uniform_buffer,
             uniform_bind_group,
-            window,
             frame_count: 0,
             last_frame_time: Instant::now(),
             fps_ring: CircularBuffer::<4, f64>::new(),
@@ -784,17 +743,19 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
     }
 
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
-
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    fn resize(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        surface: &wgpu::Surface,
+        new_size: winit::dpi::PhysicalSize<u32>,
+    ) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             let surface_size = limit_surface_res(new_size);
             self.config.width = surface_size.width;
             self.config.height = surface_size.height;
-            self.surface.configure(&self.device, &self.config);
+            surface.configure(device, &self.config);
 
             // TODO skip for euclidian?
             let ar = surface_size.width as f64 / surface_size.height as f64;
@@ -807,7 +768,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             }
             self.outer_uniform.w_scale = self.view_state.w_scale as f32;
             self.outer_uniform.h_scale = self.view_state.h_scale as f32;
-            self.queue.write_buffer(
+            queue.write_buffer(
                 &self.outer_uniform_buffer,
                 0,
                 bytemuck::cast_slice(&[self.outer_uniform]),
@@ -923,7 +884,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, queue: &wgpu::Queue) {
         self.frame_count += 1;
         const FPS_FAC: u64 = 10;
         if self.frame_count % FPS_FAC == 0 {
@@ -971,7 +932,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         }
 
         self.uniform.transform = self.view_state.get_camera_mat().into();
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::cast_slice(&[self.uniform]),
@@ -979,14 +940,14 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
 
         if self.game_state.needs_render {
             self.link_instances = self.game_state.make_link_instances();
-            self.queue.write_buffer(
+            queue.write_buffer(
                 &self.link_instance_buffer,
                 0,
                 bytemuck::cast_slice(&self.link_instances[..]),
             );
 
             self.stone_instances = self.game_state.make_stone_instances();
-            self.queue.write_buffer(
+            queue.write_buffer(
                 &self.stone_instance_buffer,
                 0,
                 bytemuck::cast_slice(&self.stone_instances[..]),
@@ -996,7 +957,7 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
 
         // TODO don't need to be updating this every frame
         self.outer_uniform.f = self.view_state.projection_factor as f32;
-        self.queue.write_buffer(
+        queue.write_buffer(
             &self.outer_uniform_buffer,
             0,
             bytemuck::cast_slice(&[self.outer_uniform]),
@@ -1075,7 +1036,11 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
         self.text_render_state.render(&mut render_pass).unwrap();
     }
 
-    fn prepare_text(&mut self) -> Result<(), glyphon::PrepareError> {
+    fn prepare_text(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<(), glyphon::PrepareError> {
         let mut avg_fps = 0.0;
         for &fps in self.fps_ring.iter() {
             avg_fps += fps;
@@ -1114,46 +1079,136 @@ impl<'a, SpinorT: Spinor> State<'a, SpinorT> {
             score_display
         );
 
-        self.text_render_state.prepare(
-            &left_text,
-            &right_text,
-            &self.device,
-            &self.queue,
-            &self.config,
-        )
+        self.text_render_state
+            .prepare(&left_text, &right_text, device, queue, &self.config)
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.prepare_text().unwrap();
+    fn render(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        surface: &wgpu::Surface,
+    ) -> Result<(), wgpu::SurfaceError> {
+        self.prepare_text(device, queue).unwrap();
 
-        let output = self.surface.get_current_texture()?;
+        let output = surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         // TODO can/should this be reused?
         let mut render_target_encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("render_target_encoder"),
-                });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_target_encoder"),
+            });
         self.render_to_render_target(&mut render_target_encoder);
         let mut commands = vec![render_target_encoder.finish()];
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("encoder"),
-            });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("encoder"),
+        });
         self.render_outer(&mut encoder, &view);
         commands.push(encoder.finish());
 
-        self.queue.submit(commands);
+        queue.submit(commands);
         output.present();
 
         self.text_render_state.post_render();
 
         Ok(())
+    }
+}
+
+struct PersistentState<'a, SpinorT: Spinor> {
+    window: &'a Window,
+    surface: wgpu::Surface<'a>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_caps: wgpu::SurfaceCapabilities,
+
+    // TODO de-specialize, can this be done without making a new trait?
+    state: Box<State<SpinorT>>,
+}
+
+impl<'a, SpinorT: Spinor> PersistentState<'a, SpinorT> {
+    async fn new(window: &'a Window) -> Self {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            #[cfg(not(target_arch = "wasm32"))]
+            backends: wgpu::Backends::PRIMARY,
+            #[cfg(target_arch = "wasm32")]
+            backends: wgpu::Backends::GL,
+            ..Default::default()
+        });
+
+        let surface = instance.create_surface(window).unwrap();
+
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .unwrap();
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    // TODO presumably this can be made optional?
+                    //required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                    required_features: wgpu::Features::default(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
+                    },
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let state = Box::new(State::new(window, &device, &queue, &surface_caps));
+
+        Self {
+            window,
+            surface,
+            device,
+            queue,
+            surface_caps,
+            state,
+        }
+    }
+
+    fn reset_state(&mut self) {
+        self.state = Box::new(State::new(
+            self.window,
+            &self.device,
+            &self.queue,
+            &self.surface_caps,
+        ));
+    }
+
+    fn resize(&mut self, new_size: Option<winit::dpi::PhysicalSize<u32>>) {
+        self.state.resize(
+            &self.device,
+            &self.queue,
+            &self.surface,
+            new_size.unwrap_or(self.state.size),
+        )
+    }
+
+    fn input(&mut self, event: &WindowEvent) -> bool {
+        self.state.input(event)
+    }
+    fn update(&mut self) {
+        self.state.update(&self.queue)
+    }
+
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.state.render(&self.device, &self.queue, &self.surface)
     }
 }
 
@@ -1229,7 +1284,7 @@ pub async fn run() {
     #[cfg(not(feature = "euclidian_geometry"))]
     use SpinorHyperbolic as SpinorT;
 
-    let mut state = State::<SpinorT>::new(&window).await;
+    let mut state = PersistentState::<SpinorT>::new(&window).await;
     let mut surface_configured = false;
 
     // TODO how is the non-deprecated version of this event loop supposed to work?
@@ -1246,9 +1301,21 @@ pub async fn run() {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == state.window().id() => {
+            } if window_id == state.window.id() => {
                 if !state.input(event) {
                     match event {
+                        WindowEvent::KeyboardInput {
+                            event:
+                                KeyEvent {
+                                    state: ElementState::Pressed,
+                                    physical_key: PhysicalKey::Code(KeyCode::Home),
+                                    ..
+                                },
+                            ..
+                        } => {
+                            info!("resetting state");
+                            state.reset_state();
+                        }
                         WindowEvent::CloseRequested
                         | WindowEvent::KeyboardInput {
                             event:
@@ -1261,11 +1328,11 @@ pub async fn run() {
                         } => control_flow.exit(),
                         WindowEvent::Resized(size) => {
                             surface_configured = true;
-                            state.resize(*size);
+                            state.resize(Some(*size));
                             info!("resize event {:?}", *size);
                         }
                         WindowEvent::RedrawRequested => {
-                            state.window().request_redraw();
+                            state.window.request_redraw();
 
                             if !surface_configured {
                                 return;
@@ -1275,7 +1342,7 @@ pub async fn run() {
                             match state.render() {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                    state.resize(state.size)
+                                    state.resize(None)
                                 }
                                 Err(wgpu::SurfaceError::OutOfMemory) => {
                                     log::error!("OutOfMemory");
