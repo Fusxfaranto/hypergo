@@ -67,9 +67,9 @@ struct Board<SpinorT: Spinor> {
 }
 
 impl<SpinorT: Spinor> Board<SpinorT> {
-    fn make_board(tiling_parameters: TilingParameters, edge_len: usize) -> Self {
+    fn make_board(tiling_parameters: TilingParameters) -> Self {
         // TODO support even size probably?
-        assert!(edge_len % 2 == 1);
+        assert!(tiling_parameters.edge_count % 2 == 1);
 
         let neighbor_directions: Vec<SpinorT> = (0..tiling_parameters.around_vertex)
             .map(|i| {
@@ -100,7 +100,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             false,
         );
         let mut start_i = 0;
-        for _ring in 1..(edge_len / 2 + 1) {
+        for _ring in 1..(tiling_parameters.edge_count / 2 + 1) {
             let l = board.points.len();
             for i in start_i..l {
                 for j in 0..neighbor_directions.len() {
@@ -241,13 +241,8 @@ pub struct GameState<SpinorT: Spinor> {
 }
 
 impl<SpinorT: Spinor> GameState<SpinorT> {
-    pub fn new() -> Self {
-        let board = if cfg!(feature = "euclidian_geometry") {
-            Board::make_board(TilingParameters::new::<SpinorT>(4, 4), 19)
-        } else {
-            Board::make_board(TilingParameters::new::<SpinorT>(5, 4), 9)
-            //Board::make_board(TilingParameters::new::<SpinorT>(5, 5), 5)
-        };
+    pub fn new(tiling_parameters: TilingParameters) -> Self {
+        let board = Board::make_board(tiling_parameters);
         Self {
             board,
             turn: Turn::Black,

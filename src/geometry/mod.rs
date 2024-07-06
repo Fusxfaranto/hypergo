@@ -67,6 +67,9 @@ pub trait Spinor:
 
 #[derive(Copy, Clone, Debug)]
 pub struct TilingParameters {
+    // n for an n*n square board
+    pub edge_count: u32,
+
     pub sides: u32,
     pub around_vertex: u32,
     pub angle: f64,
@@ -78,7 +81,11 @@ pub struct TilingParameters {
 }
 
 impl TilingParameters {
-    pub fn new<SpinorT: Spinor>(sides: u32, around_vertex: u32) -> TilingParameters {
+    pub fn new<SpinorT: Spinor>(
+        edge_count: u32,
+        sides: u32,
+        around_vertex: u32,
+    ) -> TilingParameters {
         let angle = 2.0 * PI / (around_vertex as f64);
         let distance = SpinorT::tiling_get_distance(sides, angle);
         let link_len = SpinorT::distance_to_flat(distance);
@@ -90,6 +97,7 @@ impl TilingParameters {
                 1.5
             };
         Self {
+            edge_count,
             sides,
             around_vertex,
             angle,

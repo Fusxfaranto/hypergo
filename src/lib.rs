@@ -371,6 +371,7 @@ impl<SpinorT: Spinor> State<SpinorT> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         surface_caps: &wgpu::SurfaceCapabilities,
+        tiling_parameters: TilingParameters,
     ) -> Self {
         let args = Args::parse();
 
@@ -383,7 +384,13 @@ impl<SpinorT: Spinor> State<SpinorT> {
 
         let input_state = InputState::new();
         let view_state = ViewState::new();
-        let game_state = GameState::new();
+
+        let game_state = if cfg!(feature = "euclidian_geometry") {
+            GameState::new(TilingParameters::new::<SpinorT>(19, 4, 4))
+        } else {
+            GameState::new(tiling_parameters)
+            //Board::make_board(TilingParameters::new::<SpinorT>(5, 5, 5))
+        };
 
         let size = window.inner_size();
 
@@ -1131,7 +1138,7 @@ struct PersistentState<'a, SpinorT: Spinor> {
 }
 
 impl<'a, SpinorT: Spinor> PersistentState<'a, SpinorT> {
-    async fn new(window: &'a Window) -> Self {
+    async fn new(window: &'a Window, tiling_parameters: TilingParameters) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
@@ -1170,7 +1177,13 @@ impl<'a, SpinorT: Spinor> PersistentState<'a, SpinorT> {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let state = Box::new(State::new(window, &device, &queue, &surface_caps));
+        let state = Box::new(State::new(
+            window,
+            &device,
+            &queue,
+            &surface_caps,
+            tiling_parameters,
+        ));
 
         Self {
             window,
@@ -1182,12 +1195,13 @@ impl<'a, SpinorT: Spinor> PersistentState<'a, SpinorT> {
         }
     }
 
-    fn reset_state(&mut self) {
+    fn reset_state(&mut self, tiling_parameters: TilingParameters) {
         self.state = Box::new(State::new(
             self.window,
             &self.device,
             &self.queue,
             &self.surface_caps,
+            tiling_parameters,
         ));
     }
 
@@ -1284,7 +1298,11 @@ pub async fn run() {
     #[cfg(not(feature = "euclidian_geometry"))]
     use SpinorHyperbolic as SpinorT;
 
-    let mut state = PersistentState::<SpinorT>::new(&window).await;
+    // TODO hack
+    let mut last_num_pressed = KeyCode::Digit1;
+
+    let mut state =
+        PersistentState::<SpinorT>::new(&window, TilingParameters::new::<SpinorT>(5, 5, 4)).await;
     let mut surface_configured = false;
 
     // TODO how is the non-deprecated version of this event loop supposed to work?
@@ -1308,24 +1326,42 @@ pub async fn run() {
                             event:
                                 KeyEvent {
                                     state: ElementState::Pressed,
-                                    physical_key: PhysicalKey::Code(KeyCode::Home),
+                                    physical_key: PhysicalKey::Code(keycode),
                                     ..
                                 },
                             ..
-                        } => {
-                            info!("resetting state");
-                            state.reset_state();
-                        }
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    state: ElementState::Pressed,
-                                    physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => control_flow.exit(),
+                        } => match keycode {
+                            KeyCode::Escape => {
+                                info!("resetting state");
+                                let tiling_parameters = match last_num_pressed {
+                                    KeyCode::Digit2 => TilingParameters::new::<SpinorT>(7, 5, 4),
+                                    KeyCode::Digit3 => TilingParameters::new::<SpinorT>(9, 5, 4),
+                                    KeyCode::Digit4 => TilingParameters::new::<SpinorT>(7, 5, 5),
+                                    KeyCode::Digit5 => TilingParameters::new::<SpinorT>(7, 5, 7),
+                                    KeyCode::Digit6 => TilingParameters::new::<SpinorT>(7, 6, 4),
+                                    KeyCode::Digit7 => TilingParameters::new::<SpinorT>(7, 7, 4),
+                                    KeyCode::Digit8 => TilingParameters::new::<SpinorT>(7, 8, 4),
+                                    KeyCode::Digit9 => TilingParameters::new::<SpinorT>(7, 9, 4),
+                                    _ => TilingParameters::new::<SpinorT>(5, 5, 4),
+                                };
+                                state.reset_state(tiling_parameters);
+                                state.resize(None)
+                            }
+                            KeyCode::Digit0
+                            | KeyCode::Digit1
+                            | KeyCode::Digit2
+                            | KeyCode::Digit3
+                            | KeyCode::Digit4
+                            | KeyCode::Digit5
+                            | KeyCode::Digit6
+                            | KeyCode::Digit7
+                            | KeyCode::Digit8
+                            | KeyCode::Digit9 => {
+                                last_num_pressed = *keycode;
+                            }
+                            _ => {}
+                        },
+                        WindowEvent::CloseRequested => control_flow.exit(),
                         WindowEvent::Resized(size) => {
                             surface_configured = true;
                             state.resize(Some(*size));
