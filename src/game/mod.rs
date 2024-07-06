@@ -344,7 +344,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
                     self.board.save_move();
                     if self.board.last_move_is_ko() {
                         info!("ko");
-                        self.move_history(-1);
+                        self.board.move_history(-1);
                         return false;
                     }
                     true
