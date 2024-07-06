@@ -100,7 +100,7 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             false,
         );
         let mut start_i = 0;
-        for _ring in 1..(tiling_parameters.edge_count / 2 + 1) {
+        'outer: for _ring in 1..(tiling_parameters.edge_count / 2 + 1) {
             let l = board.points.len();
             for i in start_i..l {
                 for j in 0..neighbor_directions.len() {
@@ -129,8 +129,8 @@ impl<SpinorT: Spinor> Board<SpinorT> {
                         );
 
                         test_count += 1;
-                        if test_count >= 2500 {
-                            return board;
+                        if test_count >= 25000000 {
+                            break 'outer;
                         }
                     }
                 }
@@ -206,15 +206,16 @@ impl<SpinorT: Spinor> Board<SpinorT> {
             .push(self.points.iter_mut().map(|p| p.ty).collect());
     }
 
-    fn move_history(&mut self, offset: i32) {
+    fn move_history(&mut self, offset: i32) -> i32 {
         self.history_idx += offset;
         if self.history_idx < 0 || self.history_idx >= self.history.len() as i32 {
             self.history_idx -= offset;
-            return;
+            return 0;
         }
         for (i, p) in self.points.iter_mut().enumerate() {
             p.ty = self.history[self.history_idx as usize][i];
         }
+        offset
     }
 
     // TODO superko?
@@ -403,7 +404,13 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     }
 
     pub fn move_history(&mut self, offset: i32) {
-        self.board.move_history(offset);
+        let real_offset = self.board.move_history(offset);
+        if real_offset.abs() % 2 == 1 {
+            self.turn = match self.turn {
+                Turn::Black => Turn::White,
+                Turn::White => Turn::Black,
+            };
+        }
         self.score = None;
         self.needs_render = true;
     }
