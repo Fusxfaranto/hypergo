@@ -1,0 +1,15 @@
+{
+  "name": "hypergo",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "hypergo_bg.wasm",
+    "hypergo.js",
+    "hypergo.d.ts"
+  ],
+  "module": "hypergo.js",
+  "types": "hypergo.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
