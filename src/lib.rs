@@ -222,7 +222,7 @@ impl TextRenderState {
         let mut buffer_left =
             glyphon::Buffer::new(&mut font_system, glyphon::Metrics::new(30.0, 42.0));
 
-        buffer_left.set_size(&mut font_system, 400.0, 800.0);
+        buffer_left.set_size(&mut font_system, 450.0, 800.0);
         buffer_left.shape_until_scroll(&mut font_system, false);
 
         let mut buffer_right =
@@ -670,9 +670,8 @@ impl<SpinorT: Spinor> State<SpinorT> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let models = make_models::<SpinorT>();
-        info!("{:?}", models);
-        //panic!();
+        let models = make_models::<SpinorT>(tiling_parameters.link_len);
+        //info!("{:?}", models);
 
         let stone_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("stone_vertex_buffer"),
@@ -1061,13 +1060,13 @@ impl<SpinorT: Spinor> State<SpinorT> {
         //     .apply(SpinorT::Point::zero());
 
         let hover_display = if let Some((pos, idx)) = self.hover_point_pos_idx {
-            format!("\nhovering over {:.2} ({:})", pos, idx)
+            format!("\nhovering over {:.1} ({:})", pos, idx)
         } else {
             "".into()
         };
 
         let left_text = format!(
-            "fps: {avg_fps:.2}\ncamera pos: {:.2}{:}",
+            "fps: {avg_fps:.2}\ncamera pos: {:.1}{:}",
             camera_pos, hover_display
         );
 

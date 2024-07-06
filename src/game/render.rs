@@ -36,14 +36,6 @@ const STONE_VERTS: &[Vector2<f64>] = &[
 
 const STONE_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7];
 
-const LINK_WIDTH: f64 = 0.025;
-const LINK_VERTS: &[Vector2<f64>] = &[
-    vec2(-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0),
-    vec2(-LINK_WIDTH / 2.0, LINK_WIDTH / 2.0),
-    vec2(0.5 + LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0),
-    vec2(0.5 + LINK_WIDTH / 2.0, LINK_WIDTH / 2.0),
-];
-
 const LINK_INDICES: &[u16] = &[0, 2, 1, 1, 2, 3];
 
 #[derive(Debug)]
@@ -70,20 +62,47 @@ impl Instance {
     }
 }
 
-pub fn make_models<SpinorT: Spinor>() -> Vec<Model> {
-    iter::once((&STONE_VERTS, &STONE_INDICES))
-        .chain(iter::once((&LINK_VERTS, &LINK_INDICES)))
-        .map(|t| Model {
-            verts: t
-                .0
-                .iter()
-                .map(|&v| Vertex {
-                    position: SpinorT::Point::from_flat_vec(v).to_projective().into(),
-                })
-                .collect(),
-            indices: t.1.to_vec(),
-        })
-        .collect()
+fn make_link_verts<SpinorT: Spinor>(link_len: f64) -> Vec<SpinorT::Point> {
+    const LINK_WIDTH: f64 = 0.025;
+    let t = SpinorT::translation_to(SpinorT::Point::from_flat(link_len, 0.0));
+
+    let b1 = SpinorT::Point::from_flat(-LINK_WIDTH / 2.0, -LINK_WIDTH / 2.0);
+    let b2 = SpinorT::Point::from_flat(-LINK_WIDTH / 2.0, LINK_WIDTH / 2.0);
+    let b3 = t.apply(SpinorT::Point::from_flat(
+        LINK_WIDTH / 2.0,
+        -LINK_WIDTH / 2.0,
+    ));
+    let b4 = t.apply(SpinorT::Point::from_flat(
+        LINK_WIDTH / 2.0,
+        LINK_WIDTH / 2.0,
+    ));
+
+    vec![b1, b2, b3, b4]
+}
+
+pub fn make_models<SpinorT: Spinor>(link_len: f64) -> Vec<Model> {
+    iter::once((
+        STONE_VERTS
+            .iter()
+            .map(|&v| SpinorT::Point::from_flat_vec(v))
+            .collect(),
+        &STONE_INDICES,
+    ))
+    .chain(iter::once((
+        make_link_verts::<SpinorT>(link_len),
+        &LINK_INDICES,
+    )))
+    .map(|t| Model {
+        verts: t
+            .0
+            .iter()
+            .map(|&p| Vertex {
+                position: p.to_projective().into(),
+            })
+            .collect(),
+        indices: t.1.to_vec(),
+    })
+    .collect()
 }
 
 // potential optimizations, since these are going to be called more
@@ -94,12 +113,7 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
     pub fn make_link_instances(&self) -> Vec<Instance> {
         let test_trans = SpinorT::translation(TEST_TRANS, 0.0);
         let mut instances = Vec::new();
-        // TODO need to squeeze into some sort of trapezoid
-        let stretch_mat = Matrix4::from_nonuniform_scale(
-            2.0 * self.board.tiling_parameters.link_len as f32,
-            1.0,
-            1.0,
-        );
+
         for (idx1, idx2) in self.board.links.iter() {
             //let tf1 = self.board.points[*idx1 as usize].transform;
             //let rel_pos2 = tf1.reverse().apply(self.board.points[*idx2 as usize].pos);
@@ -109,8 +123,8 @@ impl<SpinorT: Spinor> GameState<SpinorT> {
             let angle = -rel_pos2.angle();
 
             instances.push(Instance {
-                transform: ((test_trans * tf1 * SpinorT::rotation(angle)).into_mat4()
-                    * stretch_mat)
+                transform: (test_trans * tf1 * SpinorT::rotation(angle))
+                    .into_mat4()
                     .into(),
                 color: [0.1, 0.1, 0.1, 1.0],
             });
